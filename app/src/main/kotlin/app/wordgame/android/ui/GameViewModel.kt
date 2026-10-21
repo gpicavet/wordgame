@@ -37,6 +37,9 @@ data class GameUiState(
     val message: String? = null,
 ) {
     val myTurn get() = game != null && game.status == GameStatus.ACTIVE && game.currentSeat == game.mySeat
+
+    /** A game can be deleted until every player has made at least one move (same rule as the server). */
+    val canDelete get() = game != null && game.moves.map { it.seat }.toSet().size < game.players.size
     fun tentativeAt(row: Int, col: Int) = tentative.firstOrNull { it.placement.row == row && it.placement.col == col }
     fun isUsed(rackIndex: Int) = tentative.any { it.rackIndex == rackIndex }
 }
@@ -72,19 +75,56 @@ class GameViewModel(
 
     fun tapSquare(row: Int, col: Int) {
         val s = state.value
-        val game = s.game ?: return
         val existing = s.tentativeAt(row, col)
         if (existing != null) {
             updateTentative(s.tentative - existing)
             return
         }
-        val index = s.selected ?: return
-        if (Board.fromRows(game.board)[row, col] != Board.EMPTY) return
+        placeFromRack(s.selected ?: return, row, col)
+    }
+
+    /** Puts rack tile [index] on an empty square; a blank first asks for its letter. */
+    fun placeFromRack(index: Int, row: Int, col: Int) {
+        val s = state.value
+        if (!isFree(s, row, col) || s.isUsed(index)) return
         if (s.rack[index] == BLANK) {
-            state.update { it.copy(pendingBlank = row to col) }
+            state.update { it.copy(selected = index, pendingBlank = row to col) }
         } else {
             updateTentative(s.tentative + Tentative(index, Placement(row, col, s.rack[index])))
         }
+    }
+
+    /** Moves a tile put this turn to another empty square. */
+    fun moveTentative(fromRow: Int, fromCol: Int, row: Int, col: Int) {
+        val s = state.value
+        val moving = s.tentativeAt(fromRow, fromCol) ?: return
+        if (!isFree(s, row, col)) return
+        val moved = moving.copy(placement = moving.placement.copy(row = row, col = col))
+        updateTentative(s.tentative.map { if (it == moving) moved else it })
+    }
+
+    /** Sends a tile put this turn back to the rack. */
+    fun removeTentative(row: Int, col: Int) {
+        val s = state.value
+        val tile = s.tentativeAt(row, col) ?: return
+        updateTentative(s.tentative - tile)
+    }
+
+    /** Moves rack tile [from] to slot [to], shifting the tiles in between. */
+    fun moveRackTile(from: Int, to: Int) = state.update { s ->
+        if (from == to || from !in s.rack.indices || to !in s.rack.indices) return@update s
+        val order = s.rack.indices.toMutableList().apply { add(to, removeAt(from)) }
+        val newIndex = order.withIndex().associate { (newPos, oldPos) -> oldPos to newPos }
+        s.copy(
+            rack = order.map { s.rack[it] },
+            tentative = s.tentative.map { it.copy(rackIndex = newIndex.getValue(it.rackIndex)) },
+            selected = s.selected?.let(newIndex::getValue),
+        )
+    }
+
+    private fun isFree(s: GameUiState, row: Int, col: Int): Boolean {
+        val game = s.game ?: return false
+        return Board.fromRows(game.board)[row, col] == Board.EMPTY && s.tentativeAt(row, col) == null
     }
 
     fun chooseBlankLetter(letter: Char?) {
@@ -109,6 +149,14 @@ class GameViewModel(
     fun exchange(rackIndexes: Set<Int>) {
         val rack = state.value.rack
         send(Action.Exchange(rackIndexes.map { rack[it] }.joinToString("")))
+    }
+
+    fun delete(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { api.deleteGame(gameId) }
+                .onSuccess { onDeleted() }
+                .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
+        }
     }
 
     fun dismissMessage() = state.update { it.copy(message = null) }

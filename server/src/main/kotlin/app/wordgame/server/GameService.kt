@@ -39,7 +39,7 @@ class ApiException(
 class GameService(
     private val db: Database,
     private val words: WordList,
-    private val rules: RuleSet = RuleSet.FRENCH,
+    private val rules: RuleSet = RuleSet.DEFAULT,
     private val turnTimeout: Duration = 72.hours,
     private val now: () -> Long = System::currentTimeMillis,
     private val random: Random = SecureRandom().asKotlinRandom(),
@@ -119,6 +119,21 @@ class GameService(
 
     suspend fun leaveMatchmaking(user: User) = db.tx {
         update("DELETE FROM matchmaking WHERE user_id = ?", user.id)
+    }
+
+    /** A player may delete a game until every player has made at least one move (an ignored challenge). */
+    suspend fun deleteGame(user: User, gameId: String) = db.tx {
+        val game = load(gameId)
+        game.seatOf(user)
+        val seatsThatPlayed = query("SELECT record FROM moves WHERE game_id = ?", gameId) {
+            ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)).seat
+        }.toSet()
+        if (seatsThatPlayed.size >= game.seats.size) {
+            throw ApiException(HttpStatusCode.Conflict, "GAME_STARTED", "Les deux joueurs ont déjà joué")
+        }
+        update("DELETE FROM moves WHERE game_id = ?", gameId)
+        update("DELETE FROM game_players WHERE game_id = ?", gameId)
+        update("DELETE FROM games WHERE id = ?", gameId)
     }
 
     suspend fun view(user: User, gameId: String): GameView = db.tx { view(load(gameId), user) }

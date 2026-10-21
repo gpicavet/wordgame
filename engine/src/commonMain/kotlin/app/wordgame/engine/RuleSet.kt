@@ -80,8 +80,52 @@ class RuleSet(
             bingoBonus = 40,
         )
 
+        /**
+         * Classic French tournament rules: standard premium layout (center = double word),
+         * 102 tiles with the usual values, 50-point bonus for using all 7 tiles.
+         * Default for new games. Before a public release, weigh it against [FRENCH] (see README).
+         */
+        val CLASSIC = RuleSet(
+            id = "fr-classic",
+            layout = BoardLayout(
+                size = 15,
+                octant = mapOf(
+                    (0 to 0) to Premium.TRIPLE_WORD,
+                    (0 to 7) to Premium.TRIPLE_WORD,
+                    (1 to 1) to Premium.DOUBLE_WORD,
+                    (2 to 2) to Premium.DOUBLE_WORD,
+                    (3 to 3) to Premium.DOUBLE_WORD,
+                    (4 to 4) to Premium.DOUBLE_WORD,
+                    (7 to 7) to Premium.DOUBLE_WORD,
+                    (1 to 5) to Premium.TRIPLE_LETTER,
+                    (5 to 5) to Premium.TRIPLE_LETTER,
+                    (0 to 3) to Premium.DOUBLE_LETTER,
+                    (2 to 6) to Premium.DOUBLE_LETTER,
+                    (3 to 7) to Premium.DOUBLE_LETTER,
+                    (6 to 6) to Premium.DOUBLE_LETTER,
+                ),
+            ),
+            letters = mapOf(
+                'A' to LetterSpec(9, 1), 'B' to LetterSpec(2, 3), 'C' to LetterSpec(2, 3),
+                'D' to LetterSpec(3, 2), 'E' to LetterSpec(15, 1), 'F' to LetterSpec(2, 4),
+                'G' to LetterSpec(2, 2), 'H' to LetterSpec(2, 4), 'I' to LetterSpec(8, 1),
+                'J' to LetterSpec(1, 8), 'K' to LetterSpec(1, 10), 'L' to LetterSpec(5, 1),
+                'M' to LetterSpec(3, 2), 'N' to LetterSpec(6, 1), 'O' to LetterSpec(6, 1),
+                'P' to LetterSpec(2, 3), 'Q' to LetterSpec(1, 8), 'R' to LetterSpec(6, 1),
+                'S' to LetterSpec(6, 1), 'T' to LetterSpec(6, 1), 'U' to LetterSpec(6, 1),
+                'V' to LetterSpec(2, 4), 'W' to LetterSpec(1, 10), 'X' to LetterSpec(1, 10),
+                'Y' to LetterSpec(1, 10), 'Z' to LetterSpec(1, 10),
+            ),
+            blankCount = 2,
+            bingoBonus = 50,
+        )
+
+        /** Rule set of new games; existing games keep the one they were created with. */
+        val DEFAULT get() = CLASSIC
+
         init {
             all[FRENCH.id] = FRENCH
+            all[CLASSIC.id] = CLASSIC
         }
     }
 }

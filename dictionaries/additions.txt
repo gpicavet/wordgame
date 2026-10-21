@@ -1,0 +1,6 @@
+# Mots ajoutés au lexique Grammalecte, un par ligne (accents permis, normalisés à la génération).
+# Ne mettre que des mots attestés dans une source libre (Wiktionnaire…), jamais une liste recopiée de l'ODS.
+za    # pizza (familier), Wiktionnaire
+zas
+ka    # variante de kaa, Wiktionnaire
+kas

@@ -9,6 +9,11 @@ import java.util.zip.GZIPOutputStream
  * Builds the French word list from the Grammalecte lexicon (MPL 2.0, https://grammalecte.net/):
  * inflected forms, accents removed, uppercase, 2 to 15 letters, no proper nouns, no hyphens or apostrophes.
  *
+ * Also excluded: symbols and abbreviations (km, kg, cf…), suffixes, and words that only exist
+ * inside a locution (the "ad" of "ad hoc"). A word stays if at least one of its entries passes.
+ * Then applies <out>/additions.txt and <out>/removals.txt (one word per line, # comments),
+ * the hand-curated corrections fed by player reports.
+ *
  * Outputs <out>/bin/fr-libre.dawg (bundled in the app, loaded by the server)
  * and <out>/fr-libre.txt.gz (the derived list, published to comply with the MPL).
  */
@@ -31,10 +36,18 @@ fun main(args: Array<String>) {
             if (cols.size < h.size) continue
             val form = cols[h.indexOf("Flexion")]
             val tags = cols[h.indexOf("Étiquettes")].split(' ')
-            if (tags.any { it in EXCLUDED_TAGS }) continue
+            val notes = cols[h.indexOf("Notes")].split(' ')
+            if (tags.any { it in EXCLUDED_TAGS || it.startsWith("loc.") }) continue
+            if (notes.any { it in EXCLUDED_NOTES }) continue
             normalize(form)?.let(words::add)
         }
     }
+    val fromLexicon = words.size
+    val additions = readWordFile(File(out, "additions.txt"))
+    val removals = readWordFile(File(out, "removals.txt"))
+    words.addAll(additions)
+    words.removeAll(removals)
+    println("$fromLexicon words from the lexicon, +${additions.size} additions, -${removals.size} removals")
 
     val builder = DawgBuilder()
     words.forEach(builder::add)
@@ -48,14 +61,25 @@ fun main(args: Array<String>) {
     println("${words.size} words, ${dawg.edgeCount} edges, ${dawg.edgeCount * 4 / 1024} KiB")
 }
 
-/** Proper nouns, first names, surnames and the like. */
-private val EXCLUDED_TAGS = setOf("npr", "prn_npr", "patr", "prenom", "nompr")
+/** Proper nouns, first names, surnames, affixes and miscellaneous entries. */
+private val EXCLUDED_TAGS = setOf("npr", "prn_npr", "patr", "prenom", "nompr", "sfx", "pfx", "div", "err")
+
+/** Symbols (units, chemical elements…) and abbreviations. */
+private val EXCLUDED_NOTES = setOf("symb", "abr", "abty")
+
+private fun readWordFile(file: File): Set<String> {
+    if (!file.exists()) return emptySet()
+    return file.readLines().map { it.substringBefore('#').trim() }.filter { it.isNotEmpty() }
+        .map { line -> requireNotNull(normalize(line.lowercase())) { "Invalid word in ${file.name}: $line" } }
+        .toSet()
+}
 
 private val LIGATURES = mapOf('œ' to "oe", 'æ' to "ae")
 
 /** "Œuvrés" -> null (capitalized = proper noun or acronym), "œuvrés" -> "OEUVRES", "porte-clé" -> null. */
 fun normalize(form: String): String? {
-    if (form.isEmpty() || !form[0].isLowerCase()) return null
+    // Single characters are letter names ("œ"), not words, even once the ligature is expanded.
+    if (form.length < 2 || !form[0].isLowerCase()) return null
     val expanded = buildString { form.forEach { append(LIGATURES[it] ?: it) } }
     val plain = Normalizer.normalize(expanded, Normalizer.Form.NFD)
         .filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }

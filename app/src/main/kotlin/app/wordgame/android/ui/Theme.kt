@@ -56,6 +56,7 @@ fun Throwable.userMessage(): String = when (this) {
         "BAG_TOO_SMALL" -> "Moins de 7 lettres dans le sac : échange impossible"
         "TILES_NOT_IN_RACK" -> "Ces lettres ne sont pas sur ton chevalet"
         "GAME_FINISHED" -> "La partie est terminée"
+        "GAME_STARTED" -> "Les deux joueurs ont déjà joué : la partie ne peut plus être supprimée"
         else -> error.message
     }
     is IOException -> "Serveur injoignable, vérifie ta connexion"

@@ -108,6 +108,10 @@ fun Application.wordgame(service: GameService) {
                     call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>().opponentNickname))
                 }
                 get("/games/{id}") { call.respond(service.view(call.user(), call.parameters["id"]!!)) }
+                delete("/games/{id}") {
+                    service.deleteGame(call.user(), call.parameters["id"]!!)
+                    call.respond(HttpStatusCode.NoContent)
+                }
                 post("/games/{id}/moves") {
                     call.respond(service.move(call.user(), call.parameters["id"]!!, call.receive<MoveRequest>()))
                 }

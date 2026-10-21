@@ -24,7 +24,7 @@ Jeu de lettres en tour par tour, à deux joueurs. Le MVP comprend l'application 
 
 ## Dictionnaire
 
-`dictionaries/bin/fr-libre.dawg` contient environ 408 000 formes fléchies (437 Ko). Il est généré à partir du
+`dictionaries/bin/fr-libre.dawg` contient environ 407 000 formes fléchies (435 Ko). Il est généré à partir du
 [lexique Grammalecte](https://grammalecte.net/) v7.7, sous licence **MPL 2.0** :
 
 ```bash
@@ -32,7 +32,18 @@ curl -LO https://www.grammalecte.net/dic/lexique-grammalecte-fr-v7.7.zip && unzi
 ./gradlew :dict-builder:run --args="dictionaries/source/lexique-grammalecte-fr-v7.7.txt dictionaries"
 ```
 
-Traitements appliqués : accents retirés, majuscules, mots de 2 à 15 lettres. Sont exclus les noms propres, les mots à majuscule initiale, ceux qui contiennent un trait d'union ou une apostrophe, et ceux dont certains caractères ne correspondent à aucune lettre. La liste obtenue est publiée dans `dictionaries/fr-libre.txt.gz`, comme l'exige la MPL. Ce n'est **pas** l'ODS : certains mots propres au jeu de compétition (ZA, KA…) n'y figurent pas.
+Traitements appliqués : accents retirés, majuscules, mots de 2 à 15 lettres. Sont exclus les noms propres, les mots à majuscule initiale, ceux qui contiennent un trait d'union ou une apostrophe, et ceux dont certains caractères ne correspondent à aucune lettre. Sont aussi exclus les symboles et abréviations (km, kg, cf…), les affixes, les formes fautives et les mots qui n'existent qu'à l'intérieur d'une locution (le « ad » de « ad hoc »).
+
+Corrections manuelles : `dictionaries/additions.txt` et `dictionaries/removals.txt`, un mot par ligne. N'y ajouter que des mots attestés dans une source libre (Wiktionnaire…), jamais une liste recopiée de l'ODS. Il faut relancer le générateur après chaque modification. La liste obtenue est publiée dans `dictionaries/fr-libre.txt.gz`, comme l'exige la MPL. Ce n'est **pas** l'ODS : certains mots propres au jeu de compétition (ZA, KA…) n'y figurent pas.
+
+## Règles
+
+Deux jeux de règles existent dans `engine/.../RuleSet.kt` :
+
+- `fr-classic`, utilisé par défaut pour les nouvelles parties : plateau standard (centre en mot compte double), 102 jetons avec les valeurs habituelles, bonus de 50 points quand on pose ses 7 lettres ;
+- `fr-v1` : plateau et valeurs propres au projet, avec un bonus de 40.
+
+Chaque partie garde le jeu de règles avec lequel elle a été créée. **Avant une publication sur les stores**, il faudra décider lequel garder par défaut, pour limiter le risque juridique.
 
 ## API (`/api/v1`, jeton Bearer)
 

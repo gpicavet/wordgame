@@ -1,0 +1,1 @@
+# Mots retirés du lexique généré, un par ligne.

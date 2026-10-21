@@ -3,6 +3,7 @@ package app.wordgame.server
 import app.wordgame.engine.Action
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.Placement
+import app.wordgame.engine.RuleSet
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
@@ -17,6 +18,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -70,7 +72,7 @@ class ApiTest {
             setBody(CreateGameRequest("BOB"))
         }.body()
         assertEquals(7, created.rack.length)
-        assertEquals(104 - 14, created.bagCount)
+        assertEquals(RuleSet.DEFAULT.fullBag().length - 14, created.bagCount)
 
         // Whoever got seat 0 starts.
         val (starter, other) = if (created.mySeat == created.currentSeat) alice to bob else bob to alice
@@ -95,6 +97,36 @@ class ApiTest {
 
         val list: List<GameSummary> = client.get("/api/v1/games") { bearerAuth(other.token) }.body()
         assertTrue(list.single().myTurn)
+    }
+
+    @Test
+    fun deleteAllowedOnlyUntilBothPlayersHavePlayed() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        suspend fun newGame(): GameView = client.post("/api/v1/games") {
+            bearerAuth(alice.token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateGameRequest("bob"))
+        }.body()
+
+        // Nobody played yet: the challenged player can delete it.
+        val ignored = newGame()
+        assertEquals(HttpStatusCode.NoContent, client.delete("/api/v1/games/${ignored.id}") { bearerAuth(bob.token) }.status)
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/v1/games/${ignored.id}") { bearerAuth(alice.token) }.status)
+
+        // Both players have played: deletion is refused.
+        val game = newGame()
+        // Seats as seen by alice, the creator.
+        val tokenBySeat = mapOf(game.mySeat to alice.token, 1 - game.mySeat to bob.token)
+        repeat(2) {
+            val current: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(alice.token) }.body()
+            val token = tokenBySeat.getValue(current.currentSeat)
+            val view: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(token) }.body()
+            assertEquals(HttpStatusCode.OK, client.play(token, view, Action.Pass).status)
+        }
+        val refused = client.delete("/api/v1/games/${game.id}") { bearerAuth(alice.token) }
+        assertEquals(HttpStatusCode.Conflict, refused.status)
+        assertEquals("GAME_STARTED", refused.body<ApiError>().code)
     }
 
     @Test

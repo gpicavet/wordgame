@@ -21,6 +21,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -92,6 +93,10 @@ class ApiClient(private val session: Session) {
     suspend fun createGame(opponent: String): GameView =
         http.post("/api/v1/games") { auth(); json(CreateGameRequest(opponent)) }.result()
 
+    suspend fun deleteGame(id: String) {
+        http.delete("/api/v1/games/$id") { auth() }.result<Unit>()
+    }
+
     suspend fun matchmake(): MatchmakingResponse = http.post("/api/v1/matchmaking") { auth() }.result()
 
     suspend fun move(game: GameView, action: Action): GameView =
@@ -107,7 +112,7 @@ class ApiClient(private val session: Session) {
     }
 
     private suspend inline fun <reified T> HttpResponse.result(): T {
-        if (status.isSuccess()) return body()
+        if (status.isSuccess()) return if (T::class == Unit::class) Unit as T else body()
         val error = runCatching { body<ApiError>() }.getOrNull() ?: ApiError("HTTP_${status.value}", status.description)
         throw ApiFailure(error)
     }

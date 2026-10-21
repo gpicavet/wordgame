@@ -179,3 +179,49 @@ class GameTest {
         assertNull(outcome.state.winner)
     }
 }
+
+class ClassicRulesTest {
+    private val rules = RuleSet.CLASSIC
+    private val layout = rules.layout
+
+    @Test
+    fun standardBagAndBonus() {
+        assertEquals(102, rules.fullBag().length)
+        assertEquals(15, rules.fullBag().count { it == 'E' })
+        assertEquals(10, rules.points('Z'))
+        assertEquals(50, rules.bingoBonus)
+    }
+
+    @Test
+    fun standardPremiumLayout() {
+        assertEquals(Premium.DOUBLE_WORD, layout.premiumAt(7, 7))
+        listOf(0 to 0, 0 to 7, 0 to 14, 7 to 0, 7 to 14, 14 to 0, 14 to 7, 14 to 14)
+            .forEach { (r, c) -> assertEquals(Premium.TRIPLE_WORD, layout.premiumAt(r, c), "$r,$c") }
+        listOf(1 to 5, 1 to 9, 5 to 1, 5 to 5, 5 to 9, 5 to 13, 9 to 1, 9 to 5, 9 to 9, 9 to 13, 13 to 5, 13 to 9)
+            .forEach { (r, c) -> assertEquals(Premium.TRIPLE_LETTER, layout.premiumAt(r, c), "$r,$c") }
+        listOf(0 to 3, 2 to 6, 3 to 0, 3 to 7, 6 to 2, 6 to 6, 7 to 3, 7 to 11, 8 to 8, 11 to 14, 12 to 6, 14 to 11)
+            .forEach { (r, c) -> assertEquals(Premium.DOUBLE_LETTER, layout.premiumAt(r, c), "$r,$c") }
+        val counts = (0 until 15).flatMap { r -> (0 until 15).map { c -> layout.premiumAt(r, c) } }.groupingBy { it }.eachCount()
+        assertEquals(8, counts[Premium.TRIPLE_WORD])
+        assertEquals(17, counts[Premium.DOUBLE_WORD])
+        assertEquals(12, counts[Premium.TRIPLE_LETTER])
+        assertEquals(24, counts[Premium.DOUBLE_LETTER])
+    }
+
+    @Test
+    fun firstWordOnCenterIsDoubledAndSevenTilesGetFifty() {
+        val c = layout.center
+        // CHAT on (7,7)..(7,10): C on the center (double word), no other premium -> (3+4+1+1) * 2.
+        val chat = "CHAT".mapIndexed { i, ch -> Placement(c, c + i, ch) }
+        val result = MoveEvaluator.evaluate(Board.empty(15), chat, rules, WordList { true })
+        assertIs<Evaluation.Valid>(result)
+        assertEquals((3 + 4 + 1 + 1) * 2, result.score)
+
+        // 7 tiles from (7,4): ENTRAIT, (7,4) is not a premium square, (7,7) doubles the word.
+        val seven = "ENTRAIT".mapIndexed { i, ch -> Placement(c, 4 + i, ch) }
+        val bingo = MoveEvaluator.evaluate(Board.empty(15), seven, rules, WordList { true })
+        assertIs<Evaluation.Valid>(bingo)
+        assertTrue(bingo.bingo)
+        assertEquals(7 * 2 + 50, bingo.score)
+    }
+}

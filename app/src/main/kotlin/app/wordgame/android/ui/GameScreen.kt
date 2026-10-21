@@ -13,6 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -52,10 +60,15 @@ import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveType
+import app.wordgame.engine.Premium
 import app.wordgame.engine.RuleSet
 import app.wordgame.protocol.GameView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
+
+/** Size of the tile under the finger, and how far above the finger it is drawn so it stays visible. */
+private val DRAGGED_TILE = 44.dp
+private val DRAG_LIFT = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +77,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
     var confirmResign by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var exchanging by remember { mutableStateOf(false) }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -86,11 +100,16 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Text("←", fontSize = 22.sp) }
                 },
                 actions = {
-                    IconButton(onClick = { menuOpen = true }, enabled = state.myTurn) { Text("⋮", fontSize = 22.sp) }
+                    IconButton(onClick = { menuOpen = true }, enabled = state.myTurn || state.canDelete) { Text("⋮", fontSize = 22.sp) }
                     DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Échanger des lettres") }, onClick = { menuOpen = false; exchanging = true })
-                        DropdownMenuItem(text = { Text("Passer") }, onClick = { menuOpen = false; vm.pass() })
-                        DropdownMenuItem(text = { Text("Abandonner") }, onClick = { menuOpen = false; confirmResign = true })
+                        if (state.myTurn) {
+                            DropdownMenuItem(text = { Text("Échanger des lettres") }, onClick = { menuOpen = false; exchanging = true })
+                            DropdownMenuItem(text = { Text("Passer") }, onClick = { menuOpen = false; vm.pass() })
+                            DropdownMenuItem(text = { Text("Abandonner") }, onClick = { menuOpen = false; confirmResign = true })
+                        }
+                        if (state.canDelete) {
+                            DropdownMenuItem(text = { Text("Supprimer la partie") }, onClick = { menuOpen = false; confirmDelete = true })
+                        }
                     }
                 },
             )
@@ -101,37 +120,73 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
             return@Scaffold
         }
         val rules = RuleSet.byId(game.rulesId)
-        Column(
-            Modifier.padding(padding).fillMaxSize().padding(horizontal = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            BoardView(game, state, rules, onTap = vm::tapSquare)
-            Text(statusLine(game, state), Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium)
-            // Fixed height so the rack does not jump under the player's finger when a preview appears.
-            Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable { vm.dismissMessage() }) {
-                val preview = state.preview
-                val message = state.message
-                when {
-                    message != null -> Text(message, color = MaterialTheme.colorScheme.error, maxLines = 2)
-                    preview != null -> Text(
-                        preview.text,
-                        color = if (preview.valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                    )
+        val drag = remember { DragState() }
+        val liftPx = with(LocalDensity.current) { DRAG_LIFT.toPx() }
+        // The dragged tile is drawn lifted above the finger; the drop point is the tile's center.
+        val onDrop: (DragSource, Offset) -> Unit = { source, finger ->
+            val p = finger - Offset(0f, liftPx)
+            val cell = drag.boardCell(p, rules.boardSize)
+            // On the rack the lifted tile sits above the slots: the finger itself is the better guess.
+            val slot = drag.rackSlot(p) ?: drag.rackSlot(finger)
+            when (source) {
+                is DragSource.Rack -> when {
+                    cell != null -> vm.placeFromRack(source.index, cell.first, cell.second)
+                    // An empty slot at the end of a short rack means "move to the end".
+                    slot != null -> vm.moveRackTile(source.index, minOf(slot, state.rack.lastIndex))
+                }
+                is DragSource.Board -> when {
+                    cell != null -> vm.moveTentative(source.row, source.col, cell.first, cell.second)
+                    else -> vm.removeTentative(source.row, source.col)
                 }
             }
-            RackView(state, rules, onTap = vm::selectRackTile)
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = vm::play,
-                    enabled = state.myTurn && !state.busy && state.preview?.valid == true,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Jouer") }
-                if (state.tentative.isNotEmpty()) {
-                    OutlinedButton(onClick = vm::recall) { Text("Reprendre") }
-                } else {
-                    OutlinedButton(onClick = vm::shuffle) { Text("Mélanger") }
+        }
+        var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+        Box(Modifier.padding(padding).fillMaxSize().onGloballyPositioned { overlayOrigin = it.positionInRoot() }) {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BoardView(game, state, rules, drag, onTap = vm::tapSquare, onDrop = onDrop)
+                Text(statusLine(game, state), Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                // Fixed height so the rack does not jump under the player's finger when a preview appears.
+                Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable { vm.dismissMessage() }) {
+                    val preview = state.preview
+                    val message = state.message
+                    when {
+                        message != null -> Text(message, color = MaterialTheme.colorScheme.error, maxLines = 2)
+                        preview != null -> Text(
+                            preview.text,
+                            color = if (preview.valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                        )
+                    }
+                }
+                RackView(state, rules, drag, onTap = vm::selectRackTile, onDrop = onDrop)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = vm::play,
+                        enabled = state.myTurn && !state.busy && state.preview?.valid == true,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Jouer") }
+                    if (state.tentative.isNotEmpty()) {
+                        OutlinedButton(onClick = vm::recall) { Text("Reprendre") }
+                    } else {
+                        OutlinedButton(onClick = vm::shuffle) { Text("Mélanger") }
+                    }
+                }
+            }
+            if (drag.source != null) {
+                val sizePx = with(LocalDensity.current) { DRAGGED_TILE.toPx() }
+                val topLeft = drag.position - overlayOrigin - Offset(sizePx / 2, sizePx / 2 + liftPx)
+                Box(
+                    Modifier.offset { IntOffset(topLeft.x.roundToInt(), topLeft.y.roundToInt()) }
+                        .size(DRAGGED_TILE)
+                        .shadow(8.dp, RoundedCornerShape(6.dp))
+                        .background(BoardColors.tentativeTile, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(if (drag.letter == BLANK) "" else drag.letter.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 }
             }
         }
@@ -139,6 +194,15 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
 
     if (state.pendingBlank != null) BlankLetterDialog(onChoose = vm::chooseBlankLetter)
     if (exchanging) ExchangeDialog(state, onDismiss = { exchanging = false }, onConfirm = { exchanging = false; vm.exchange(it) })
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Supprimer la partie ?") },
+            text = { Text("Elle disparaîtra aussi chez ton adversaire.") },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; vm.delete(onDeleted = onBack) }) { Text("Supprimer") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        )
+    }
     if (confirmResign) {
         AlertDialog(
             onDismissRequest = { confirmResign = false },
@@ -180,15 +244,26 @@ private fun statusLine(game: GameView, state: GameUiState): String {
 }
 
 @Composable
-private fun BoardView(game: GameView, state: GameUiState, rules: RuleSet, onTap: (Int, Int) -> Unit) {
+private fun BoardView(
+    game: GameView,
+    state: GameUiState,
+    rules: RuleSet,
+    drag: DragState,
+    onTap: (Int, Int) -> Unit,
+    onDrop: (DragSource, Offset) -> Unit,
+) {
     val board = Board.fromRows(game.board)
     val lastMove = game.moves.lastOrNull()?.tiles.orEmpty().map { it.row to it.col }.toSet()
-    Column(Modifier.fillMaxWidth().aspectRatio(1f)) {
+    Column(Modifier.fillMaxWidth().aspectRatio(1f).dropTargetBounds { drag.boardBounds = it }) {
         for (r in 0 until board.size) {
             Row(Modifier.weight(1f)) {
                 for (c in 0 until board.size) {
-                    val tentative = state.tentativeAt(r, c)
+                    val placed = state.tentativeAt(r, c)
+                    // Hidden while dragged, but still draggable: changing `enabled` mid-gesture would cancel it.
+                    val tentative = placed?.takeUnless { drag.isDragging(DragSource.Board(r, c)) }
                     val cell = board[r, c]
+                    val premium = rules.layout.premiumAt(r, c)
+                    val isCenter = r == rules.layout.center && c == rules.layout.center
                     Square(
                         letter = tentative?.placement?.letter ?: cell.takeIf { it != Board.EMPTY }?.uppercaseChar(),
                         points = when {
@@ -199,11 +274,14 @@ private fun BoardView(game: GameView, state: GameUiState, rules: RuleSet, onTap:
                         background = when {
                             tentative != null -> BoardColors.tentativeTile
                             cell != Board.EMPTY -> if ((r to c) in lastMove) BoardColors.lastMoveTile else BoardColors.tile
-                            r == rules.layout.center && c == rules.layout.center -> BoardColors.center
-                            else -> BoardColors.premium(rules.layout.premiumAt(r, c))
+                            isCenter && premium == Premium.NONE -> BoardColors.center
+                            else -> BoardColors.premium(premium)
                         },
-                        label = BoardColors.label(rules.layout.premiumAt(r, c)),
+                        label = if (isCenter) "★" else BoardColors.label(premium),
                         onClick = { onTap(r, c) },
+                        dragModifier = Modifier.dragSource(
+                            drag, DragSource.Board(r, c), placed?.placement?.letter ?: ' ', enabled = placed != null, onDrop = onDrop,
+                        ),
                     )
                 }
             }
@@ -212,9 +290,17 @@ private fun BoardView(game: GameView, state: GameUiState, rules: RuleSet, onTap:
 }
 
 @Composable
-private fun RowScope.Square(letter: Char?, points: Int, background: Color, label: String, onClick: () -> Unit) {
+private fun RowScope.Square(
+    letter: Char?,
+    points: Int,
+    background: Color,
+    label: String,
+    onClick: () -> Unit,
+    dragModifier: Modifier,
+) {
     Box(
-        Modifier.weight(1f).fillMaxSize().padding(0.5.dp).background(background, RoundedCornerShape(2.dp)).clickable(onClick = onClick),
+        Modifier.weight(1f).fillMaxSize().padding(0.5.dp).background(background, RoundedCornerShape(2.dp))
+            .then(dragModifier).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (letter != null) {
@@ -234,12 +320,30 @@ private fun RowScope.Square(letter: Char?, points: Int, background: Color, label
 }
 
 @Composable
-private fun RackView(state: GameUiState, rules: RuleSet, onTap: (Int) -> Unit) {
+private fun RackView(
+    state: GameUiState,
+    rules: RuleSet,
+    drag: DragState,
+    onTap: (Int) -> Unit,
+    onDrop: (DragSource, Offset) -> Unit,
+) {
+    // Always rackSize slots: tiles keep their size when the bag is empty and the rack shrinks.
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        state.rack.forEachIndexed { i, tile ->
-            val used = state.isUsed(i)
+        for (i in 0 until rules.rackSize) {
+            val tile = state.rack.getOrNull(i)
+            if (tile == null) {
+                Box(
+                    Modifier.weight(1f).aspectRatio(1f)
+                        .dropTargetBounds { drag.rackSlots[i] = it }
+                        .background(BoardColors.square, RoundedCornerShape(6.dp)),
+                )
+                continue
+            }
+            val used = state.isUsed(i) || drag.isDragging(DragSource.Rack(i))
             Box(
                 Modifier.weight(1f).aspectRatio(1f)
+                    .dropTargetBounds { drag.rackSlots[i] = it }
+                    .dragSource(drag, DragSource.Rack(i), tile, enabled = !state.isUsed(i), onDrop = onDrop)
                     .background(if (used) BoardColors.square else BoardColors.tile, RoundedCornerShape(6.dp))
                     .then(if (state.selected == i) Modifier.border(3.dp, BoardColors.tentativeTile, RoundedCornerShape(6.dp)) else Modifier)
                     .clickable(enabled = !used) { onTap(i) },
