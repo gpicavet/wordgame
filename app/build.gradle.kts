@@ -1,0 +1,62 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+android {
+    namespace = "app.wordgame.android"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "app.wordgame.android"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "0.1.0"
+        // Emulator -> host machine. Override with -PapiUrl=http://192.168.x.y:8080 for a real phone.
+        buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "http://10.0.2.2:8080"}\"")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://api.example.com"}\"")
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // The DAWG built by :dict-builder, used for the live score preview.
+    sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/bin"))
+}
+
+kotlin { jvmToolchain(17) }
+
+dependencies {
+    implementation(project(":protocol"))
+
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.activity.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.json)
+}

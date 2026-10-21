@@ -1,0 +1,5 @@
+# Replace with your domain; Caddy gets the TLS certificate from Let's Encrypt automatically.
+api.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
