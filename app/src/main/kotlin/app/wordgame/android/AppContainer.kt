@@ -40,7 +40,7 @@ class WordgameApplication : Application() {
 
 class AppContainer(context: Context) {
     val session = Session(context)
-    val api = ApiClient(BuildConfig.API_URL, session)
+    val api = ApiClient(session)
     val dictionary = DictionaryLoader(context)
 }
 
@@ -50,6 +50,11 @@ class Session(context: Context) {
 
     val token: String? get() = prefs.getString("token", null)
     val nickname: String? get() = prefs.getString("nickname", null)
+
+    /** Editable in debug builds so a new tunnel address does not need a new APK. */
+    var serverUrl: String
+        get() = prefs.getString("serverUrl", null) ?: BuildConfig.API_URL
+        set(value) = prefs.edit().putString("serverUrl", value.trim().trimEnd('/')).apply()
 
     fun save(auth: AuthResponse) {
         prefs.edit().putString("token", auth.token).putString("nickname", auth.nickname).apply()
@@ -69,10 +74,11 @@ class DictionaryLoader(private val context: Context) {
 
 class ApiFailure(val error: ApiError) : Exception(error.message)
 
-class ApiClient(baseUrl: String, private val session: Session) {
+class ApiClient(private val session: Session) {
     private val http = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(ApiJson) }
-        defaultRequest { url(baseUrl) }
+        // Evaluated for every request, so a server address change applies immediately.
+        defaultRequest { url(session.serverUrl) }
     }
 
     suspend fun register(nickname: String): AuthResponse =

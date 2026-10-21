@@ -38,6 +38,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.ApiClient
+import app.wordgame.android.Session
 import app.wordgame.engine.GameStatus
 import app.wordgame.protocol.GameSummary
 import kotlinx.coroutines.delay
@@ -79,7 +80,7 @@ class GamesViewModel(private val api: ApiClient) : ViewModel() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesScreen(api: ApiClient, nickname: String, onOpenGame: (String) -> Unit) {
+fun GamesScreen(api: ApiClient, session: Session, nickname: String, onOpenGame: (String) -> Unit) {
     val vm = viewModel { GamesViewModel(api) }
     val state by vm.state.collectAsStateWithLifecycle()
     var showNewGame by remember { mutableStateOf(false) }
@@ -95,7 +96,7 @@ fun GamesScreen(api: ApiClient, nickname: String, onOpenGame: (String) -> Unit) 
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Parties de $nickname") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Parties de $nickname") }, actions = { ServerButton(session) }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                 Button(onClick = { showNewGame = true }) { Text("Défier un ami") }

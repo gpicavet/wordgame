@@ -21,10 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.wordgame.android.ApiClient
+import app.wordgame.android.Session
 import kotlinx.coroutines.launch
 
 @Composable
-fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
+fun OnboardingScreen(api: ApiClient, session: Session, onRegistered: (String) -> Unit) {
     var nickname by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -59,6 +60,7 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
                     }
                 },
             ) { Text("Commencer") }
+            ServerButton(session)
         }
     }
 }

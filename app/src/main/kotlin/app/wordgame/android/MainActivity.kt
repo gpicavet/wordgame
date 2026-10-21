@@ -33,11 +33,11 @@ private fun WordgameApp(container: AppContainer) {
 
     val gameId = openGameId
     when {
-        nickname == null -> OnboardingScreen(container.api, onRegistered = { nickname = it })
+        nickname == null -> OnboardingScreen(container.api, container.session, onRegistered = { nickname = it })
         gameId != null -> {
             BackHandler { openGameId = null }
             GameScreen(container, gameId, onBack = { openGameId = null })
         }
-        else -> GamesScreen(container.api, nickname!!, onOpenGame = { openGameId = it })
+        else -> GamesScreen(container.api, container.session, nickname!!, onOpenGame = { openGameId = it })
     }
 }
