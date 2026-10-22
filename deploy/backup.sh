@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly SQLite backup, safe while the server runs. Cron: 15 3 * * * /opt/wordgame/backup.sh
+# Nightly SQLite backup, safe while the server runs (wordgame-backup.timer).
 set -euo pipefail
 
 DB=/var/lib/wordgame/wordgame.db

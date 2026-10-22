@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# First install on a fresh Debian/Ubuntu Stardust instance, run as root:
-#   scp server/build/libs/wordgame-server.jar dictionaries/bin/fr-libre.dawg deploy/* root@HOST:/tmp/wordgame/
-#   ssh root@HOST bash /tmp/wordgame/install.sh
+# Install or update on a Debian/Ubuntu VPS, as root (safe to run again):
+#   scp server/build/libs/wordgame-server.jar dictionaries/bin/fr-libre.dawg deploy/* HOST:/tmp/wordgame/
+#   ssh HOST sudo bash /tmp/wordgame/install.sh
 set -euo pipefail
 SRC=/tmp/wordgame
 
 apt-get update
-apt-get install -y --no-install-recommends openjdk-17-jre-headless sqlite3 caddy
+# default-jre-headless: Java 17 on Debian 12, 21 on Debian 13 and Ubuntu 24.04 (the jar targets 17).
+apt-get install -y --no-install-recommends default-jre-headless sqlite3 caddy
 
-# 1 GB of RAM: a small swap file avoids an OOM kill during apt upgrades.
+# Small RAM: a swap file avoids an OOM kill during apt upgrades.
 if ! swapon --show | grep -q /swapfile; then
     fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
@@ -22,8 +23,10 @@ chown -R wordgame:wordgame /var/lib/wordgame
 
 install -m 644 "$SRC/wordgame.service" /etc/systemd/system/
 install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
-(crontab -l 2>/dev/null | grep -v backup.sh; echo "15 3 * * * /opt/wordgame/backup.sh") | crontab -
+# Nightly backup with a systemd timer: works on minimal images that ship without cron.
+install -m 644 "$SRC/wordgame-backup.service" "$SRC/wordgame-backup.timer" /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable --now wordgame
+systemctl enable --now wordgame-backup.timer
 systemctl reload caddy

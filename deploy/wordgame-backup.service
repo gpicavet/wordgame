@@ -1,0 +1,6 @@
+[Unit]
+Description=Wordgame SQLite backup
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wordgame/backup.sh
