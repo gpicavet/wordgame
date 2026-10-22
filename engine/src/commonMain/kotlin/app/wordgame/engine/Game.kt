@@ -55,7 +55,21 @@ data class MoveRecord(
     val words: List<FormedWord> = emptyList(),
     val tiles: List<Placement> = emptyList(),
     val exchangedCount: Int = 0,
+    /** Points added to (or removed from) each seat when this move ends the game; empty otherwise. */
+    val endAdjustments: List<Int> = emptyList(),
+    val end: GameEnd? = null,
 )
+
+/** Why a game ended on this move (resignation and timeouts are told by the move type). */
+@Serializable
+enum class GameEnd {
+    /** Bag empty and a player put down their last tiles. */
+    OUT,
+    /** Fewer tiles in the bag than a rack (no exchange possible) and every player passed in a row. */
+    BLOCKED,
+    /** Too many scoreless turns in a row. */
+    SCORELESS,
+}
 
 sealed interface MoveOutcome {
     data class Applied(val state: GameState, val record: MoveRecord) : MoveOutcome
@@ -137,7 +151,7 @@ object Game {
             scorelessTurns = 0,
         )
         if (next.bag.isEmpty() && players[seat].rack.isEmpty()) {
-            return MoveOutcome.Applied(finishByEmptyRack(next, seat), record)
+            return ended(next, finishByEmptyRack(next, seat), record, GameEnd.OUT)
         }
         return MoveOutcome.Applied(next, record)
     }
@@ -168,11 +182,21 @@ object Game {
             moveNumber = state.moveNumber + 1,
             scorelessTurns = state.scorelessTurns + 1,
         )
-        if (next.scorelessTurns < state.rules.maxScorelessTurns) return MoveOutcome.Applied(next, record)
-        // Everybody loses the value of the tiles left on their rack.
         val rules = state.rules
+        // With fewer tiles than a rack, nobody can exchange: a full round of passes means nobody can play.
+        // (Exchanges are impossible then and plays reset the counter, so these turns were all passes.)
+        val blocked = next.bag.length < rules.rackSize && next.scorelessTurns >= players.size
+        val tooLong = next.scorelessTurns >= rules.maxScorelessTurns
+        if (!blocked && !tooLong) return MoveOutcome.Applied(next, record)
+        // Everybody loses the value of the tiles left on their rack.
         val final = next.players.map { it.copy(score = it.score - rackValue(it.rack, rules)) }
-        return MoveOutcome.Applied(finish(next.copy(players = final)), record)
+        return ended(next, finish(next.copy(players = final)), record, if (blocked) GameEnd.BLOCKED else GameEnd.SCORELESS)
+    }
+
+    /** Records on the final move how the end of the game changed each score. */
+    private fun ended(before: GameState, after: GameState, record: MoveRecord, end: GameEnd): MoveOutcome {
+        val adjustments = after.players.indices.map { after.players[it].score - before.players[it].score }
+        return MoveOutcome.Applied(after, record.copy(endAdjustments = adjustments, end = end))
     }
 
     /** The player who went out gains the opponents' remaining tiles, which they lose. */

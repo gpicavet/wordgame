@@ -2,6 +2,7 @@ package app.wordgame.protocol
 
 import app.wordgame.engine.Action
 import app.wordgame.engine.FormedWord
+import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveType
 import app.wordgame.engine.Placement
@@ -48,6 +49,9 @@ data class MoveView(
     val tiles: List<Placement>,
     val exchangedCount: Int,
     val playedAt: Long,
+    /** Score change of each seat when this move ended the game (going out, blocked game…). */
+    val endAdjustments: List<Int> = emptyList(),
+    val end: GameEnd? = null,
 )
 
 /** What one player is allowed to see: their own rack only, and the bag size. */

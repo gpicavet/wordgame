@@ -225,3 +225,52 @@ class ClassicRulesTest {
         assertEquals(7 * 2 + 50, bingo.score)
     }
 }
+
+class EndOfGameTest {
+    private val rules = RuleSet.CLASSIC
+    private val anyWord = WordList { true }
+    private val c = rules.layout.center
+
+    @Test
+    fun goingOutWinsTheOtherRackAndRecordsTheBonus() {
+        // Bag empty, seat 0 plays its last two tiles; seat 1 keeps Z (10) + E (1).
+        val state = Game.new(rules, 2, Random(1)).copy(
+            bag = "",
+            players = listOf(PlayerState(100, "LA"), PlayerState(90, "ZE")),
+        )
+        val outcome = Game.apply(state, 0, Action.Play(listOf(Placement(c, c, 'L'), Placement(c, c + 1, 'A'))), anyWord, Random(2))
+        assertIs<MoveOutcome.Applied>(outcome)
+        assertEquals(GameEnd.OUT, outcome.record.end)
+        assertEquals(listOf(11, -11), outcome.record.endAdjustments)
+        assertEquals(100 + outcome.record.score + 11, outcome.state.players[0].score)
+        assertEquals(90 - 11, outcome.state.players[1].score)
+        assertEquals(GameStatus.FINISHED, outcome.state.status)
+    }
+
+    @Test
+    fun aRoundOfPassesWithASmallBagBlocksTheGame() {
+        // 3 tiles left in the bag: nobody can exchange.
+        var state = Game.new(rules, 2, Random(1)).copy(
+            bag = "AEI",
+            players = listOf(PlayerState(50, "KZ"), PlayerState(60, "E")),
+        )
+        state = (Game.apply(state, 0, Action.Pass, anyWord, Random(2)) as MoveOutcome.Applied).state
+        assertEquals(GameStatus.ACTIVE, state.status)
+        val outcome = Game.apply(state, 1, Action.Pass, anyWord, Random(2))
+        assertIs<MoveOutcome.Applied>(outcome)
+        assertEquals(GameEnd.BLOCKED, outcome.record.end)
+        assertEquals(listOf(-20, -1), outcome.record.endAdjustments)
+        assertEquals(listOf(30, 59), outcome.state.players.map { it.score })
+        assertEquals(1, outcome.state.winner)
+    }
+
+    @Test
+    fun passesWithAFullBagDoNotBlock() {
+        var state = Game.new(rules, 2, Random(1))
+        repeat(5) { state = (Game.apply(state, state.currentPlayer, Action.Pass, anyWord, Random(2)) as MoveOutcome.Applied).state }
+        assertEquals(GameStatus.ACTIVE, state.status)
+        val outcome = Game.apply(state, state.currentPlayer, Action.Pass, anyWord, Random(2))
+        assertIs<MoveOutcome.Applied>(outcome)
+        assertEquals(GameEnd.SCORELESS, outcome.record.end)
+    }
+}

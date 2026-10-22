@@ -60,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.AppContainer
 import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
+import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveType
 import app.wordgame.engine.Premium
@@ -245,13 +246,19 @@ private fun statusLine(game: GameView, state: GameUiState): String {
     val opponent = game.players[1 - game.mySeat].nickname
     val last = game.moves.lastOrNull()?.let { m ->
         val who = if (m.seat == game.mySeat) "Toi" else game.players[m.seat].nickname
-        when (m.type) {
-            MoveType.PLAY -> "$who : ${m.words.joinToString { it.word }} +${m.score}"
+        val text = when (m.type) {
+            MoveType.PLAY -> "$who : ${m.words.joinToString { it.word }} +${m.score}" +
+                (if (m.end == GameEnd.OUT) " (+${m.endAdjustments[m.seat]} de bonus de fin)" else "")
             MoveType.EXCHANGE -> "$who a échangé ${m.exchangedCount} lettre(s)"
-            MoveType.PASS -> "$who a passé"
+            MoveType.PASS -> if (m.end == GameEnd.BLOCKED) "Partie bloquée" else "$who a passé"
             MoveType.RESIGN -> "$who a abandonné"
             MoveType.TIMEOUT -> "$who a dépassé le temps"
         }
+        // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
+        val deductions = m.endAdjustments.withIndex().filter { it.value < 0 }.joinToString { (seat, delta) ->
+            "${if (seat == game.mySeat) "toi" else game.players[seat].nickname} $delta"
+        }
+        if (deductions.isEmpty()) text else "$text · lettres restantes : $deductions"
     }
     val turn = when {
         game.status == GameStatus.FINISHED -> when (game.winnerSeat) {

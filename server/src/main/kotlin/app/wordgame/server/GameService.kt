@@ -1,6 +1,7 @@
 package app.wordgame.server
 
 import app.wordgame.engine.Game
+import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameState
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveOutcome
@@ -261,9 +262,10 @@ class GameService(
     private fun afterMove(game: StoredGame, state: GameState, record: MoveRecord): List<Notification> {
         val mover = game.seats[record.seat]
         val what = when (record.type) {
-            MoveType.PLAY -> "${mover.nickname} a joué ${record.words.joinToString { it.word }} (+${record.score})"
+            MoveType.PLAY -> "${mover.nickname} a joué ${record.words.joinToString { it.word }} (+${record.score}" +
+                (if (record.end == GameEnd.OUT) ", +${record.endAdjustments[record.seat]} de bonus de fin)" else ")")
             MoveType.EXCHANGE -> "${mover.nickname} a échangé ${record.exchangedCount} lettre(s)"
-            MoveType.PASS -> "${mover.nickname} a passé son tour"
+            MoveType.PASS -> if (record.end == GameEnd.BLOCKED) "Partie bloquée" else "${mover.nickname} a passé son tour"
             MoveType.RESIGN -> "${mover.nickname} a abandonné"
             MoveType.TIMEOUT -> "${mover.nickname} n'a pas joué à temps"
         }
@@ -331,7 +333,7 @@ class GameService(
         val state = game.state
         val moves = query("SELECT move_number, record, played_at FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
             val r = ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(2))
-            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3))
+            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3), r.endAdjustments, r.end)
         }
         return GameView(
             id = game.id,
