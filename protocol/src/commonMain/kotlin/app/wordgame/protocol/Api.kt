@@ -24,6 +24,9 @@ data class AuthResponse(val userId: String, val nickname: String, val token: Str
 data class Me(val userId: String, val nickname: String)
 
 @Serializable
+data class DeviceRequest(val token: String)
+
+@Serializable
 data class CreateGameRequest(val opponentNickname: String)
 
 @Serializable

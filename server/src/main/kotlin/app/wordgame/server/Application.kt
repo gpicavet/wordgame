@@ -4,6 +4,7 @@ import app.wordgame.engine.Dawg
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.CreateGameRequest
+import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
@@ -48,7 +49,11 @@ fun main() {
     File(dbPath).absoluteFile.parentFile.mkdirs()
 
     val dictionary = Dawg.fromBytes(File(dictPath).readBytes())
-    val service = GameService(Database(dbPath), dictionary)
+    val db = Database(dbPath)
+    // Push notifications are optional: without credentials the game works, players just are not notified.
+    val notifier = env["WORDGAME_FCM_CREDENTIALS"]?.let(::File)?.takeIf { it.exists() }
+        ?.let { FcmNotifier(it, db) } ?: NoNotifier.also { log.info("Push notifications disabled (no WORDGAME_FCM_CREDENTIALS)") }
+    val service = GameService(db, dictionary, notifier = notifier)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dictionary.edgeCount, dbPath)
 
     embeddedServer(
@@ -105,6 +110,10 @@ fun Application.wordgame(service: GameService) {
                 }
                 get("/games") { call.respond(service.listGames(call.user())) }
                 get("/me/stats") { call.respond(service.stats(call.user())) }
+                post("/devices") {
+                    service.registerDevice(call.user(), call.receive<DeviceRequest>().token)
+                    call.respond(HttpStatusCode.NoContent)
+                }
                 post("/games") {
                     call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>().opponentNickname))
                 }

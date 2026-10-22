@@ -8,6 +8,7 @@ import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.CreateGameRequest
+import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
@@ -15,6 +16,7 @@ import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.RegisterRequest
 import app.wordgame.engine.Action
+import app.wordgame.android.push.Push
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -38,6 +40,12 @@ import kotlinx.coroutines.withContext
 
 class WordgameApplication : Application() {
     val container by lazy { AppContainer(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        Push.createChannel(this)
+        Push.syncToken(this)
+    }
 }
 
 class AppContainer(context: Context) {
@@ -93,6 +101,10 @@ class ApiClient(private val session: Session) {
 
     suspend fun createGame(opponent: String): GameView =
         http.post("/api/v1/games") { auth(); json(CreateGameRequest(opponent)) }.result()
+
+    suspend fun registerDevice(token: String) {
+        http.post("/api/v1/devices") { auth(); json(DeviceRequest(token)) }.result<Unit>()
+    }
 
     suspend fun stats(): PlayerStats = http.get("/api/v1/me/stats") { auth() }.result()
 

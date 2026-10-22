@@ -48,6 +48,7 @@ class GameService(
     private val turnTimeout: Duration = 72.hours,
     private val now: () -> Long = System::currentTimeMillis,
     private val random: Random = SecureRandom().asKotlinRandom(),
+    private val notifier: Notifier = NoNotifier,
 ) {
     private class Seat(val userId: String, val nickname: String)
     private class StoredGame(val id: String, val state: GameState, val deadline: Long, val seats: List<Seat>)
@@ -163,8 +164,9 @@ class GameService(
         checkActiveGameLimit(user)
         checkActiveGameLimit(opponent)
         val id = insertGame(listOf(user, opponent))
-        view(load(id), user)
-    }
+        val game = load(id)
+        view(game, user) to listOf(challenge(game, opponent, "Nouveau défi", "${user.nickname} te défie"))
+    }.let { (view, notifications) -> notifier.send(notifications); view }
 
     /** Pairs with the oldest waiting player, or queues the caller. */
     suspend fun matchmake(user: User): MatchmakingResponse = db.tx {
@@ -179,7 +181,9 @@ class GameService(
             MatchmakingResponse(null)
         } else {
             update("DELETE FROM matchmaking WHERE user_id IN (?, ?)", waiting.id, user.id)
-            MatchmakingResponse(insertGame(listOf(user, waiting)))
+            val id = insertGame(listOf(user, waiting))
+            notifier.send(listOf(challenge(load(id), waiting, "Adversaire trouvé", "Partie contre ${user.nickname}")))
+            MatchmakingResponse(id)
         }
     }
 
@@ -210,14 +214,17 @@ class GameService(
         if (request.expectedMoveNumber != game.state.moveNumber) {
             throw ApiException(HttpStatusCode.Conflict, "STALE_GAME", "La partie a changé, rechargez-la")
         }
-        when (val outcome = Game.apply(game.state, seat, request.action, words, random)) {
+        val notifications = when (val outcome = Game.apply(game.state, seat, request.action, words, random)) {
             is MoveOutcome.Rejected -> throw ApiException(
                 HttpStatusCode.UnprocessableEntity, outcome.error.name, outcome.error.name, outcome.unknownWords,
             )
-            is MoveOutcome.Applied -> save(game.id, outcome.state, outcome.record)
+            is MoveOutcome.Applied -> {
+                save(game.id, outcome.state, outcome.record)
+                afterMove(game, outcome.state, outcome.record)
+            }
         }
-        view(load(gameId), user)
-    }
+        view(load(gameId), user) to notifications
+    }.let { (view, notifications) -> notifier.send(notifications); view }
 
     /** Current player loses when they have not played before the deadline. */
     suspend fun expireTimeouts(): Int = db.tx {
@@ -225,9 +232,58 @@ class GameService(
         for (id in expired) {
             val state = load(id).state
             val outcome = Game.resign(state, state.currentPlayer, MoveType.TIMEOUT)
-            if (outcome is MoveOutcome.Applied) save(id, outcome.state, outcome.record)
+            if (outcome is MoveOutcome.Applied) {
+                save(id, outcome.state, outcome.record)
+                notifier.send(afterMove(load(id), outcome.state, outcome.record))
+            }
         }
         expired.size
+    }
+
+    /** Remembers the phone of [user] for push notifications (a token belongs to one account at a time). */
+    suspend fun registerDevice(user: User, token: String) {
+        if (token.isBlank() || token.length > 4096) throw ApiException(HttpStatusCode.BadRequest, "INVALID_TOKEN", "Jeton invalide")
+        db.tx {
+            update(
+                "INSERT INTO devices(token, user_id, updated_at) VALUES (?, ?, ?) " +
+                    "ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at",
+                token, user.id, now(),
+            )
+        }
+    }
+
+    private fun challenge(game: StoredGame, to: User, title: String, body: String): Notification {
+        val theirTurn = game.seats[game.state.currentPlayer].userId == to.id
+        return Notification(to.id, title, if (theirTurn) "$body. À toi de jouer !" else "$body.", game.id)
+    }
+
+    /** Who to tell what after a move: the next player, or everybody else when the game is over. */
+    private fun afterMove(game: StoredGame, state: GameState, record: MoveRecord): List<Notification> {
+        val mover = game.seats[record.seat]
+        val what = when (record.type) {
+            MoveType.PLAY -> "${mover.nickname} a joué ${record.words.joinToString { it.word }} (+${record.score})"
+            MoveType.EXCHANGE -> "${mover.nickname} a échangé ${record.exchangedCount} lettre(s)"
+            MoveType.PASS -> "${mover.nickname} a passé son tour"
+            MoveType.RESIGN -> "${mover.nickname} a abandonné"
+            MoveType.TIMEOUT -> "${mover.nickname} n'a pas joué à temps"
+        }
+        if (state.status == GameStatus.ACTIVE) {
+            val next = game.seats[state.currentPlayer]
+            return listOf(Notification(next.userId, "À toi de jouer", what, game.id))
+        }
+        return game.seats.indices.mapNotNull { seat ->
+            val player = game.seats[seat]
+            if (seat == record.seat && record.type != MoveType.TIMEOUT) return@mapNotNull null
+            val opponent = game.seats[1 - seat].nickname
+            val score = "${state.players[seat].score} – ${state.players[1 - seat].score}"
+            val result = when (state.winner) {
+                seat -> "Victoire contre $opponent"
+                null -> "Égalité avec $opponent"
+                else -> "Défaite contre $opponent"
+            }
+            val title = if (record.type == MoveType.TIMEOUT && seat == record.seat) "Temps écoulé" else "Partie terminée"
+            Notification(player.userId, title, "$result, $score. $what.", game.id)
+        }
     }
 
     private fun Connection.insertGame(players: List<User>): String {

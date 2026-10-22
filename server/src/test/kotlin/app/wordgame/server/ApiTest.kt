@@ -9,6 +9,7 @@ import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.CreateGameRequest
+import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.GameResult
 import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.PlayerStats
@@ -164,6 +165,55 @@ class ApiTest {
 
         val bobStats: PlayerStats = client.get("/api/v1/me/stats") { bearerAuth(bob.token) }.body()
         assertEquals(1, bobStats.losses)
+    }
+
+    @Test
+    fun notifiesTheRightPlayerAtTheRightTime() {
+        val sent = mutableListOf<Notification>()
+        val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
+        testApplication {
+            val service = GameService(Database(dbFile.path), words, notifier = { sent += it })
+            application { wordgame(service) }
+            val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
+            val alice = client.register("alice")
+            val bob = client.register("bob")
+            assertEquals(
+                HttpStatusCode.NoContent,
+                client.post("/api/v1/devices") {
+                    bearerAuth(bob.token)
+                    contentType(ContentType.Application.Json)
+                    setBody(DeviceRequest("fcm-token-of-bob"))
+                }.status,
+            )
+
+            val game: GameView = client.post("/api/v1/games") {
+                bearerAuth(alice.token)
+                contentType(ContentType.Application.Json)
+                setBody(CreateGameRequest("bob"))
+            }.body()
+            // The challenged player hears about it, the challenger does not.
+            assertEquals(listOf(bob.userId), sent.map { it.userId })
+            assertEquals("Nouveau défi", sent.single().title)
+            sent.clear()
+
+            val tokenBySeat = mapOf(game.mySeat to alice, 1 - game.mySeat to bob)
+            val starter = tokenBySeat.getValue(game.currentSeat)
+            val other = tokenBySeat.getValue(1 - game.currentSeat)
+            val view: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(starter.token) }.body()
+            val tiles = view.rack.filter { it != '?' }.take(2).mapIndexed { i, ch -> Placement(7, 7 + i, ch) }
+            client.play(starter.token, view, Action.Play(tiles))
+            val turn = sent.single()
+            assertEquals(other.userId, turn.userId)
+            assertEquals("À toi de jouer", turn.title)
+            assertTrue(turn.body.startsWith("${starter.nickname} a joué "), turn.body)
+            assertEquals(game.id, turn.gameId)
+            sent.clear()
+
+            // Resignation: only the other player is told, with the result.
+            client.play(other.token, client.get("/api/v1/games/${game.id}") { bearerAuth(other.token) }.body(), Action.Resign)
+            assertEquals(listOf(starter.userId), sent.map { it.userId })
+            assertTrue(sent.single().body.startsWith("Victoire contre ${other.nickname}"), sent.single().body)
+        }
     }
 
     @Test

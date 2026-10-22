@@ -7,3 +7,5 @@ local.properties
 .DS_Store
 /data/
 dictionaries/source/
+app/google-services.json
+secrets/

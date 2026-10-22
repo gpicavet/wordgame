@@ -68,6 +68,11 @@ class Database(path: String) : AutoCloseable {
                 record TEXT NOT NULL,
                 played_at INTEGER NOT NULL,
                 PRIMARY KEY (game_id, move_number))""",
+            """CREATE TABLE IF NOT EXISTS devices (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                updated_at INTEGER NOT NULL)""",
+            "CREATE INDEX IF NOT EXISTS devices_user ON devices(user_id)",
             """CREATE TABLE IF NOT EXISTS matchmaking (
                 user_id TEXT PRIMARY KEY REFERENCES users(id),
                 queued_at INTEGER NOT NULL)""",

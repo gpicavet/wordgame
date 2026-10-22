@@ -21,6 +21,13 @@ install -m 644 "$SRC/wordgame-server.jar" "$SRC/fr-libre.dawg" /opt/wordgame/
 install -m 755 "$SRC/backup.sh" /opt/wordgame/
 chown -R wordgame:wordgame /var/lib/wordgame
 
+# Firebase key (secret): readable by the service only, and only installed when provided.
+if [ -f "$SRC/fcm-service-account.json" ]; then
+    install -d -m 750 -o root -g wordgame /etc/wordgame
+    install -m 640 -o root -g wordgame "$SRC/fcm-service-account.json" /etc/wordgame/
+    rm -f "$SRC/fcm-service-account.json"
+fi
+
 install -m 644 "$SRC/wordgame.service" /etc/systemd/system/
 install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
 # Nightly backup with a systemd timer: works on minimal images that ship without cron.

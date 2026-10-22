@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Firebase is configured by app/google-services.json (from the Firebase console, not committed).
+// Without it the app builds and runs, only without push notifications.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
 android {
     namespace = "app.wordgame.android"
     compileSdk = 36
@@ -53,6 +57,9 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.client.core)
