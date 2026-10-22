@@ -80,3 +80,44 @@ data class GameSummary(
 
 @Serializable
 data class ApiError(val code: String, val message: String, val unknownWords: List<String> = emptyList())
+
+/** Result of a finished game, from the requesting player's point of view. */
+@Serializable
+enum class GameResult { WIN, LOSS, DRAW }
+
+@Serializable
+data class FinishedGame(
+    val gameId: String,
+    val opponent: String,
+    val myScore: Int,
+    val opponentScore: Int,
+    val result: GameResult,
+    val finishedAt: Long,
+)
+
+@Serializable
+data class BestMove(val words: List<String>, val score: Int, val opponent: String, val playedAt: Long)
+
+@Serializable
+data class OpponentRecord(val nickname: String, val wins: Int, val losses: Int, val draws: Int)
+
+@Serializable
+data class PlayerStats(
+    val finishedGames: Int,
+    val activeGames: Int,
+    val wins: Int,
+    val losses: Int,
+    val draws: Int,
+    /** Over finished games; null when there is none. */
+    val averageScore: Double?,
+    val averageMargin: Double?,
+    /** Over all the player's turns (plays, passes, exchanges), finished or active games. */
+    val pointsPerTurn: Double?,
+    val bingos: Int,
+    val bestMove: BestMove?,
+    val bestGame: FinishedGame?,
+    val longestWord: String?,
+    /** Oldest first. */
+    val history: List<FinishedGame>,
+    val opponents: List<OpponentRecord>,
+)

@@ -9,7 +9,9 @@ import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.CreateGameRequest
+import app.wordgame.protocol.GameResult
 import app.wordgame.protocol.GameSummary
+import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
 import app.wordgame.protocol.MoveRequest
@@ -127,6 +129,41 @@ class ApiTest {
         val refused = client.delete("/api/v1/games/${game.id}") { bearerAuth(alice.token) }
         assertEquals(HttpStatusCode.Conflict, refused.status)
         assertEquals("GAME_STARTED", refused.body<ApiError>().code)
+    }
+
+    @Test
+    fun statsSummarizeFinishedGamesAndMoves() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val game: GameView = client.post("/api/v1/games") {
+            bearerAuth(alice.token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateGameRequest("bob"))
+        }.body()
+        val tokenBySeat = mapOf(game.mySeat to alice.token, 1 - game.mySeat to bob.token)
+
+        // The first player plays two tiles, then bob resigns: alice's stats depend on who started.
+        val starter = tokenBySeat.getValue(game.currentSeat)
+        val view: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(starter) }.body()
+        val tiles = view.rack.filter { it != '?' }.take(2).mapIndexed { i, ch -> Placement(7, 7 + i, ch) }
+        val played: GameView = client.play(starter, view, Action.Play(tiles)).body()
+        val points = played.players[played.mySeat].score
+        client.play(bob.token, client.get("/api/v1/games/${game.id}") { bearerAuth(bob.token) }.body(), Action.Resign)
+
+        val stats: PlayerStats = client.get("/api/v1/me/stats") { bearerAuth(alice.token) }.body()
+        assertEquals(1, stats.finishedGames)
+        assertEquals(1, stats.wins)
+        assertEquals(listOf(GameResult.WIN), stats.history.map { it.result })
+        assertEquals(listOf("bob"), stats.opponents.map { it.nickname })
+        if (starter == alice.token) {
+            assertEquals(points, stats.bestMove?.score)
+            assertEquals(points.toDouble(), stats.pointsPerTurn)
+        } else {
+            assertEquals(null, stats.bestMove)
+        }
+
+        val bobStats: PlayerStats = client.get("/api/v1/me/stats") { bearerAuth(bob.token) }.body()
+        assertEquals(1, bobStats.losses)
     }
 
     @Test

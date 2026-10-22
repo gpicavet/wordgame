@@ -12,6 +12,7 @@ import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
 import app.wordgame.protocol.MoveRequest
+import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.RegisterRequest
 import app.wordgame.engine.Action
 import io.ktor.client.HttpClient
@@ -92,6 +93,8 @@ class ApiClient(private val session: Session) {
 
     suspend fun createGame(opponent: String): GameView =
         http.post("/api/v1/games") { auth(); json(CreateGameRequest(opponent)) }.result()
+
+    suspend fun stats(): PlayerStats = http.get("/api/v1/me/stats") { auth() }.result()
 
     suspend fun deleteGame(id: String) {
         http.delete("/api/v1/games/$id") { auth() }.result<Unit>()

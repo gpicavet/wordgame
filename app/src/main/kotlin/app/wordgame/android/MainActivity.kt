@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import app.wordgame.android.ui.GameScreen
 import app.wordgame.android.ui.GamesScreen
 import app.wordgame.android.ui.OnboardingScreen
+import app.wordgame.android.ui.StatsScreen
 import app.wordgame.android.ui.WordgameTheme
 
 class MainActivity : ComponentActivity() {
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
 private fun WordgameApp(container: AppContainer) {
     var nickname by rememberSaveable { mutableStateOf(container.session.nickname) }
     var openGameId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
 
     val gameId = openGameId
     when {
@@ -38,6 +40,10 @@ private fun WordgameApp(container: AppContainer) {
             BackHandler { openGameId = null }
             GameScreen(container, gameId, onBack = { openGameId = null })
         }
-        else -> GamesScreen(container.api, container.session, nickname!!, onOpenGame = { openGameId = it })
+        showStats -> {
+            BackHandler { showStats = false }
+            StatsScreen(container.api, onBack = { showStats = false })
+        }
+        else -> GamesScreen(container.api, container.session, nickname!!, onOpenGame = { openGameId = it }, onOpenStats = { showStats = true })
     }
 }

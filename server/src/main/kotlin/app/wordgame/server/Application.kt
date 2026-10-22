@@ -104,6 +104,7 @@ fun Application.wordgame(service: GameService) {
                     call.respond(Me(user.id, user.nickname))
                 }
                 get("/games") { call.respond(service.listGames(call.user())) }
+                get("/me/stats") { call.respond(service.stats(call.user())) }
                 post("/games") {
                     call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>().opponentNickname))
                 }

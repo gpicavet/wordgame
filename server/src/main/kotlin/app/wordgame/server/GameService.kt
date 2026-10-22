@@ -10,6 +10,11 @@ import app.wordgame.engine.RuleSet
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
+import app.wordgame.protocol.BestMove
+import app.wordgame.protocol.FinishedGame
+import app.wordgame.protocol.GameResult
+import app.wordgame.protocol.OpponentRecord
+import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
@@ -87,6 +92,67 @@ class GameService(
                 updatedAt = query("SELECT updated_at FROM games WHERE id = ?", id) { it.getLong(1) }.single(),
             )
         }
+    }
+
+    /** Computed from the stored games and moves on each call: cheap at this scale, nothing to keep in sync. */
+    suspend fun stats(user: User): PlayerStats = db.tx {
+        val ids = query("SELECT game_id FROM game_players WHERE user_id = ?", user.id) { it.getString(1) }
+        val finished = ArrayList<FinishedGame>()
+        val myMoves = ArrayList<Pair<MoveRecord, Pair<String, Long>>>() // move, (opponent, playedAt)
+        var active = 0
+        for (id in ids) {
+            val game = load(id)
+            val seat = game.seatOf(user)
+            val opponent = game.seats[1 - seat].nickname
+            val state = game.state
+            query("SELECT record, played_at FROM moves WHERE game_id = ?", id) {
+                ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)) to it.getLong(2)
+            }.filter { it.first.seat == seat }.forEach { (record, at) -> myMoves += record to (opponent to at) }
+            if (state.status != GameStatus.FINISHED) {
+                active++
+                continue
+            }
+            val finishedAt = query("SELECT updated_at FROM games WHERE id = ?", id) { it.getLong(1) }.single()
+            finished += FinishedGame(
+                gameId = id,
+                opponent = opponent,
+                myScore = state.players[seat].score,
+                opponentScore = state.players[1 - seat].score,
+                result = when (state.winner) {
+                    seat -> GameResult.WIN
+                    null -> GameResult.DRAW
+                    else -> GameResult.LOSS
+                },
+                finishedAt = finishedAt,
+            )
+        }
+        finished.sortBy { it.finishedAt }
+        val turns = myMoves.filter { it.first.type in setOf(MoveType.PLAY, MoveType.PASS, MoveType.EXCHANGE) }
+        val plays = myMoves.filter { it.first.type == MoveType.PLAY }
+        val best = plays.maxByOrNull { it.first.score }
+        PlayerStats(
+            finishedGames = finished.size,
+            activeGames = active,
+            wins = finished.count { it.result == GameResult.WIN },
+            losses = finished.count { it.result == GameResult.LOSS },
+            draws = finished.count { it.result == GameResult.DRAW },
+            averageScore = finished.takeIf { it.isNotEmpty() }?.map { it.myScore }?.average(),
+            averageMargin = finished.takeIf { it.isNotEmpty() }?.map { it.myScore - it.opponentScore }?.average(),
+            pointsPerTurn = turns.takeIf { it.isNotEmpty() }?.map { it.first.score }?.average(),
+            bingos = plays.count { it.first.tiles.size == rules.rackSize },
+            bestMove = best?.let { (m, ctx) -> BestMove(m.words.map { it.word }, m.score, ctx.first, ctx.second) },
+            bestGame = finished.maxByOrNull { it.myScore },
+            longestWord = plays.flatMap { it.first.words }.maxWithOrNull(compareBy({ it.word.length }, { it.score }))?.word,
+            history = finished,
+            opponents = finished.groupBy { it.opponent }.map { (name, games) ->
+                OpponentRecord(
+                    name,
+                    games.count { it.result == GameResult.WIN },
+                    games.count { it.result == GameResult.LOSS },
+                    games.count { it.result == GameResult.DRAW },
+                )
+            }.sortedByDescending { it.wins + it.losses + it.draws },
+        )
     }
 
     suspend fun createGame(user: User, opponentNickname: String): GameView = db.tx {
