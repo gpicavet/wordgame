@@ -38,6 +38,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.ApiClient
+import app.wordgame.android.push.Push
 import app.wordgame.android.SOLO_GAME_ID
 import app.wordgame.android.SoloStore
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +108,8 @@ fun GamesScreen(api: ApiClient, solo: SoloStore, nickname: String, onOpenGame: (
     var showNewGame by remember { mutableStateOf(false) }
 
     // Poll while visible. Push notifications will replace this.
+    LaunchedEffect(Unit) { Push.gameUpdates.collect { vm.refresh() } }
+
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {

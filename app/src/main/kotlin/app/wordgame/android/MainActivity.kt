@@ -45,7 +45,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra(EXTRA_GAME_ID)?.let { notifiedGame.value = it }
+        intent.getStringExtra(EXTRA_GAME_ID)?.let {
+            notifiedGame.value = it
+            // Already showing that game: opening it again changes nothing, so ask for a reload.
+            Push.gameUpdates.tryEmit(it)
+        }
     }
 }
 

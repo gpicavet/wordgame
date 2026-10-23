@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.AppContainer
+import app.wordgame.android.push.Push
 import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
 import app.wordgame.engine.Lexicon
@@ -88,6 +89,8 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     var lexicon by remember { mutableStateOf<Lexicon?>(null) }
     LaunchedEffect(Unit) { lexicon = vm.lexicon() }
     var exchanging by remember { mutableStateOf(false) }
+
+    LaunchedEffect(gameId) { Push.gameUpdates.collect { if (it == gameId) vm.refresh() } }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {

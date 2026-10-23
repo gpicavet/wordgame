@@ -18,6 +18,7 @@ import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
 const val CHANNEL_TURNS = "turns"
@@ -27,6 +28,9 @@ const val EXTRA_GAME_ID = "gameId"
 
 object Push {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Games that just changed (push received, or notification tapped): open screens reload them. */
+    val gameUpdates = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     fun createChannel(context: Context) {
         val channel = NotificationChannel(CHANNEL_TURNS, "Tours de jeu", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -62,8 +66,10 @@ class WordgameMessagingService : FirebaseMessagingService() {
 
     /** Only called while the app is in the foreground: FCM shows background notifications itself. */
     override fun onMessageReceived(message: RemoteMessage) {
-        val content = message.notification ?: return
         val gameId = message.data[EXTRA_GAME_ID] ?: return
+        // The app is open: refresh what is on screen right away.
+        Push.gameUpdates.tryEmit(gameId)
+        val content = message.notification ?: return
         val notification = NotificationCompat.Builder(this, CHANNEL_TURNS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(content.title)
