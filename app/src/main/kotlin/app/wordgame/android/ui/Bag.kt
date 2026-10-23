@@ -113,7 +113,7 @@ fun UnseenTilesDialog(game: GameView, onDismiss: () -> Unit) {
                                 .background(BoardColors.tile, RoundedCornerShape(4.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(if (tile == BLANK) "?" else tile.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            TileGlyph(if (tile == BLANK) "?" else tile.toString(), null, BoardColors.tileText, letterSize = 0.5f)
                             Box(
                                 Modifier.align(Alignment.TopEnd).padding(1.dp).size(15.dp)
                                     .background(MaterialTheme.colorScheme.secondary, CircleShape),

@@ -219,7 +219,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                         .background(BoardColors.tentativeTile, RoundedCornerShape(6.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(if (drag.letter == BLANK) "" else drag.letter.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    TileGlyph(if (drag.letter == BLANK) "" else drag.letter.toString(), null, BoardColors.tileText, letterSize = 0.5f)
                 }
             }
         }
@@ -360,17 +360,9 @@ private fun RowScope.Square(
         contentAlignment = Alignment.Center,
     ) {
         if (letter != null) {
-            Text(letter.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            if (points > 0) {
-                Text(
-                    points.toString(),
-                    Modifier.align(Alignment.BottomEnd).padding(end = 1.dp),
-                    color = BoardColors.tileText,
-                    fontSize = 7.sp,
-                )
-            }
+            TileGlyph(letter.toString(), points, BoardColors.tileText)
         } else if (label.isNotEmpty()) {
-            Text(label, fontSize = 8.sp, color = Color(0xFF2B3A46))
+            TileGlyph(label, null, Color(0xFF2B3A46), letterSize = if (label.length > 1) 0.3f else 0.45f)
         }
     }
 }
@@ -423,10 +415,7 @@ private fun RackView(
                 contentAlignment = Alignment.Center,
             ) {
                 if (!hidden) {
-                    Text(if (tile == BLANK) "" else tile.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-                    if (tile != BLANK) {
-                        Text(rules.points(tile).toString(), Modifier.align(Alignment.BottomEnd).padding(4.dp), color = BoardColors.tileText, fontSize = 10.sp)
-                    }
+                    TileGlyph(if (tile == BLANK) "" else tile.toString(), if (tile == BLANK) null else rules.points(tile), BoardColors.tileText, letterSize = 0.5f, pointsSize = 0.2f)
                 }
             }
         }
@@ -496,7 +485,7 @@ private fun ExchangeDialog(state: GameUiState, onDismiss: () -> Unit, onConfirm:
                             .background(if (i in chosen) BoardColors.tentativeTile else BoardColors.tile, RoundedCornerShape(4.dp))
                             .clickable { chosen = if (i in chosen) chosen - i else chosen + i },
                         contentAlignment = Alignment.Center,
-                    ) { Text(if (tile == BLANK) "?" else tile.toString(), color = BoardColors.tileText, fontWeight = FontWeight.Bold) }
+                    ) { TileGlyph(if (tile == BLANK) "?" else tile.toString(), null, BoardColors.tileText, letterSize = 0.5f) }
                 }
             }
         },
