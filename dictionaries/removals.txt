@@ -1,1 +1,4 @@
 # Mots retirés du lexique généré, un par ligne.
+op    # abréviation, absent de la liste des mots de 2 lettres
+pt    # abréviation de « point »
+pts

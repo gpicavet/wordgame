@@ -1,0 +1,11 @@
+# Mots qui n'existent dans le lexique qu'à l'intérieur d'une locution latine ou étrangère
+# (« de facto », « in vitro », « a giorno »…) : exclus du jeu. Les mots français qui ne vivent
+# que dans une locution (à jeun, d'antan, en catimini, à l'envi…) restent acceptés.
+# Un mot par ligne ; ne concerne que les mots sans autre emploi dans le lexique.
+AB AC AD ID IN DIE IBN BENE SUI QUA QUO QUIA
+ABRUPTO ABSTRACTO ABSURDO AETERNAM CAETERA CETERA COETERA CAPELLA CAPPELLA CATHEDRA
+COMMODO INCOMMODO CONTRARIO CUJUS EXTENSO EXTREMIS FACTO FORTIORI GENERIS GIORNO GROSSO
+HOC HOMINEM HONORIS INCOGNITA INFINITUM INITIO INTUITU IPSO IRATO LIBITUM MANU MILITARI
+MODO MORTEM MUTANDIS MUTATIS NAUSEAM NIHILO NUNC ORBI URBI OVO PERSONAE PETTO POSTERIORI
+PROFESSO PROFUNDIS QUANTI SENSU SINE SITU STATU STRICTO UTERO VADE VALOREM VISU VITAM
+VITRO VIVO

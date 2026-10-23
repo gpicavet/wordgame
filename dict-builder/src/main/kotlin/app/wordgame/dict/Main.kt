@@ -9,8 +9,10 @@ import java.util.zip.GZIPOutputStream
  * Builds the French word list from the Grammalecte lexicon (MPL 2.0, https://grammalecte.net/):
  * inflected forms, accents removed, uppercase, 2 to 15 letters, no proper nouns, no hyphens or apostrophes.
  *
- * Also excluded: symbols and abbreviations (km, kg, cf…), suffixes, and words that only exist
- * inside a locution (the "ad" of "ad hoc"). A word stays if at least one of its entries passes.
+ * Also excluded: symbols and written abbreviations (km, kg, cf…), suffixes, error forms, and words that only
+ * exist inside a Latin or foreign locution (dictionaries/locutions-exclues.txt: the "hoc" of "ad hoc").
+ * Clipped words (topo, resto) and French locution words (jeun, antan) stay.
+ * A word stays if at least one of its entries passes.
  * Then applies <out>/additions.txt and <out>/removals.txt (one word per line, # comments),
  * the hand-curated corrections fed by player reports.
  *
@@ -25,6 +27,7 @@ fun main(args: Array<String>) {
     val words = sortedSetOf<String>()
     // Everyday vocabulary for the beginner bot: forms with a frequency index of at least COMMON_INDEX.
     val common = sortedSetOf<String>()
+    val locutionOnly = HashSet<String>()
     var header: List<String>? = null
     source.useLines { lines ->
         for (line in lines) {
@@ -39,13 +42,20 @@ fun main(args: Array<String>) {
             val form = cols[h.indexOf("Flexion")]
             val tags = cols[h.indexOf("Étiquettes")].split(' ')
             val notes = cols[h.indexOf("Notes")].split(' ')
-            if (tags.any { it in EXCLUDED_TAGS || it.startsWith("loc.") }) continue
+            if (tags.any { it in EXCLUDED_TAGS }) continue
             if (notes.any { it in EXCLUDED_NOTES }) continue
             val word = normalize(form) ?: continue
+            // Words that only exist inside a locution: kept unless listed as Latin/foreign (see below).
+            if (tags.any { it.startsWith("loc.") }) {
+                locutionOnly.add(word)
+                continue
+            }
             words.add(word)
             if ((cols[h.indexOf("Indice de fréquence")].toIntOrNull() ?: 0) >= COMMON_INDEX) common.add(word)
         }
     }
+    val excludedLocutions = readWordFile(File(out, "locutions-exclues.txt"))
+    words.addAll(locutionOnly - excludedLocutions)
     val fromLexicon = words.size
     val additions = readWordFile(File(out, "additions.txt"))
     val removals = readWordFile(File(out, "removals.txt"))
@@ -75,12 +85,15 @@ private const val COMMON_INDEX = 6
 /** Proper nouns, first names, surnames, affixes and miscellaneous entries. */
 private val EXCLUDED_TAGS = setOf("npr", "prn_npr", "patr", "prenom", "nompr", "sfx", "pfx", "div", "err")
 
-/** Symbols (units, chemical elements…) and abbreviations. */
-private val EXCLUDED_NOTES = setOf("symb", "abr", "abty")
+/**
+ * Symbols (km, kg…) and written abbreviations (cf, janv, cos…).
+ * Not "abr": those are clipped words used as words (accro, ado, apéro, topo, resto).
+ */
+private val EXCLUDED_NOTES = setOf("symb", "abty")
 
 private fun readWordFile(file: File): Set<String> {
     if (!file.exists()) return emptySet()
-    return file.readLines().map { it.substringBefore('#').trim() }.filter { it.isNotEmpty() }
+    return file.readLines().flatMap { it.substringBefore('#').split(' ', '\t') }.map { it.trim() }.filter { it.isNotEmpty() }
         .map { line -> requireNotNull(normalize(line.lowercase())) { "Invalid word in ${file.name}: $line" } }
         .toSet()
 }
