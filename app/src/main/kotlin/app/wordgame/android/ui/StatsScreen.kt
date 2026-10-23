@@ -1,5 +1,6 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.attempt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -61,7 +62,7 @@ fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
     var stats by remember { mutableStateOf<PlayerStats?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        runCatching { api.stats() }.onSuccess { stats = it }.onFailure { error = it.userMessage() }
+        attempt { api.stats() }.onSuccess { stats = it }.onFailure { error = it.userMessage() }
     }
 
     Scaffold(

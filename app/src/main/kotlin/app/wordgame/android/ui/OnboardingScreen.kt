@@ -1,5 +1,6 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.attempt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,7 +53,7 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
                 onClick = {
                     busy = true
                     scope.launch {
-                        runCatching { api.register(nickname) }
+                        attempt { api.register(nickname) }
                             .onSuccess { onRegistered(it.nickname) }
                             .onFailure { error = it.userMessage() }
                         busy = false

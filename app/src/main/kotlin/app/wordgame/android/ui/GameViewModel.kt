@@ -1,5 +1,6 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.attempt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.wordgame.android.GameBackend
@@ -74,7 +75,7 @@ class GameViewModel(
     suspend fun lexicon(): Lexicon = dictionary.get()
 
     suspend fun refresh() {
-        runCatching { backend.load() }
+        attempt { backend.load() }
             .onSuccess(::show)
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
@@ -174,7 +175,7 @@ class GameViewModel(
 
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
-            runCatching { backend.delete() }
+            attempt { backend.delete() }
                 .onSuccess { onDeleted() }
                 .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
         }
@@ -186,11 +187,19 @@ class GameViewModel(
         val game = state.value.game ?: return
         state.update { it.copy(busy = true) }
         viewModelScope.launch {
-            runCatching { backend.move(game, action) }
+            attempt { backend.move(game, action) }
                 .onSuccess { show(it); state.update { s -> s.copy(message = null) } }
                 .onFailure { e ->
                     state.update { it.copy(message = e.userMessage()) }
-                    if (e is ApiFailure && e.error.code == "STALE_GAME") refresh()
+                    if (e is ApiFailure && e.error.code == "STALE_GAME") {
+                        refresh()
+                        // A retried move whose first attempt got through (only the answer was lost):
+                        // the reloaded game shows it as our last move, so there is nothing to report.
+                        val reloaded = state.value.game
+                        if (reloaded != null && reloaded.moveNumber == game.moveNumber + 1 &&
+                            reloaded.moves.lastOrNull()?.seat == reloaded.mySeat
+                        ) dismissMessage()
+                    }
                 }
             state.update { it.copy(busy = false) }
             // Solo: the bot answers right away (loading the game makes it play).

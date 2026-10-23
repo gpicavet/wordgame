@@ -1,5 +1,6 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.attempt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -72,7 +73,7 @@ class GamesViewModel(private val api: ApiClient, private val solo: SoloStore) : 
                 if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
             )
         }
-        runCatching { api.games() }
+        attempt { api.games() }
             .onSuccess { games -> state.update { it.copy(games = listOfNotNull(soloGame) + games, message = null) } }
             .onFailure { e -> state.update { it.copy(games = listOfNotNull(soloGame), message = e.userMessage()) } }
     }
@@ -85,13 +86,13 @@ class GamesViewModel(private val api: ApiClient, private val solo: SoloStore) : 
     }
 
     fun newGame(opponent: String, onCreated: (String) -> Unit) = viewModelScope.launch {
-        runCatching { api.createGame(opponent) }
+        attempt { api.createGame(opponent) }
             .onSuccess { onCreated(it.id) }
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
 
     fun findRandomOpponent(onCreated: (String) -> Unit) = viewModelScope.launch {
-        runCatching { api.matchmake() }
+        attempt { api.matchmake() }
             .onSuccess { r ->
                 if (r.gameId != null) onCreated(r.gameId!!)
                 else state.update { it.copy(waitingForOpponent = true, message = "En attente d'un adversaire…") }

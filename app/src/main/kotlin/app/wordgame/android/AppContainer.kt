@@ -19,10 +19,14 @@ import app.wordgame.protocol.RegisterRequest
 import app.wordgame.engine.Action
 import app.wordgame.android.push.Push
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.http.HttpMethod
+import kotlin.coroutines.cancellation.CancellationException
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
@@ -97,10 +101,30 @@ class DictionaryLoader(private val context: Context) {
 
 class ApiFailure(val error: ApiError) : Exception(error.message)
 
+/**
+ * Calls that are safe to send twice: reads, moves (guarded by the expected move number, so a move can
+ * never be played twice) and the phone registration (an upsert). Not sign-up, challenges or deletion.
+ */
+private fun retryable(method: HttpMethod, url: String) =
+    method == HttpMethod.Get || url.endsWith("/moves") || url.endsWith("/api/v1/devices")
+
+/** Up to 2 retries (after ~0.5 s then ~1 s) on network errors and 5xx, never on game errors (4xx). */
+fun HttpClientConfig<*>.retrySafeCalls(delayStepMs: Long = 500) {
+    install(HttpRequestRetry) {
+        maxRetries = 2
+        retryIf { request, response -> response.status.value >= 500 && retryable(request.method, request.url.toString()) }
+        retryOnExceptionIf { request, cause ->
+            cause !is CancellationException && retryable(request.method, request.url.buildString())
+        }
+        delayMillis { retry -> delayStepMs * retry }
+    }
+}
+
 class ApiClient(private val session: Session) {
     private val http = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(ApiJson) }
         defaultRequest { url(BuildConfig.API_URL) }
+        retrySafeCalls()
     }
 
     suspend fun register(nickname: String): AuthResponse =

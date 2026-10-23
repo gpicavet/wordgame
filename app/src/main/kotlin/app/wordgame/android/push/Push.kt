@@ -1,5 +1,6 @@
 package app.wordgame.android.push
 
+import app.wordgame.android.attempt
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -48,7 +49,7 @@ object Push {
     fun register(context: Context, token: String) {
         val container = (context.applicationContext as WordgameApplication).container
         if (container.session.token == null) return
-        scope.launch { runCatching { container.api.registerDevice(token) } }
+        scope.launch { attempt { container.api.registerDevice(token) } }
     }
 
     fun openGameIntent(context: Context, gameId: String): PendingIntent = PendingIntent.getActivity(
