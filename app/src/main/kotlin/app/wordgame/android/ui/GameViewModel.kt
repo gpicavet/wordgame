@@ -2,7 +2,7 @@ package app.wordgame.android.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.wordgame.android.ApiClient
+import app.wordgame.android.GameBackend
 import app.wordgame.android.ApiFailure
 import app.wordgame.android.DictionaryLoader
 import app.wordgame.engine.Action
@@ -13,6 +13,7 @@ import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveEvaluator
 import app.wordgame.engine.Placement
 import app.wordgame.engine.RuleSet
+import app.wordgame.engine.Lexicon
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.GameView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,38 +36,58 @@ data class GameUiState(
     val preview: Preview? = null,
     val busy: Boolean = false,
     val message: String? = null,
+    val lastMoveAnalysis: MoveAnalysis? = null,
+    val solo: Boolean = false,
 ) {
     val myTurn get() = game != null && game.status == GameStatus.ACTIVE && game.currentSeat == game.mySeat
 
-    /** A game can be deleted until every player has made at least one move (same rule as the server). */
-    val canDelete get() = game != null && game.moves.map { it.seat }.toSet().size < game.players.size
+    /** Online: until every player has made a move (same rule as the server). Solo: always. */
+    val canDelete get() = game != null && (solo || game.moves.map { it.seat }.toSet().size < game.players.size)
     fun tentativeAt(row: Int, col: Int) = tentative.firstOrNull { it.placement.row == row && it.placement.col == col }
     fun isUsed(rackIndex: Int) = tentative.any { it.rackIndex == rackIndex }
 }
 
 class GameViewModel(
-    private val gameId: String,
-    private val api: ApiClient,
+    private val backend: GameBackend,
     private val dictionary: DictionaryLoader,
 ) : ViewModel() {
-    val state = MutableStateFlow(GameUiState())
-    private var words: WordList? = null
+    val state = MutableStateFlow(GameUiState(solo = backend.solo))
+    private var lexicon: Lexicon? = null
+    private val words: WordList? get() = lexicon?.words
 
     init {
-        viewModelScope.launch { words = dictionary.get() }
+        viewModelScope.launch {
+            lexicon = dictionary.get()
+            state.value.game?.let(::analyseLastMove)
+        }
     }
 
+    /** Best moves that were possible for the player's last move (computed on the phone, never sent anywhere). */
+    private fun analyseLastMove(game: GameView) {
+        val lex = lexicon ?: return
+        viewModelScope.launch {
+            val result = analyse(game, lex, game.mySeat, onlyLast = true).firstOrNull()
+            state.update { if (it.game?.moveNumber == game.moveNumber) it.copy(lastMoveAnalysis = result) else it }
+        }
+    }
+
+    suspend fun lexicon(): Lexicon = dictionary.get()
+
     suspend fun refresh() {
-        runCatching { api.game(gameId) }
+        runCatching { backend.load() }
             .onSuccess(::show)
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
 
     /** Keeps the local rack order and tentative tiles unless the game moved on. */
-    private fun show(game: GameView) = state.update { s ->
-        val changed = s.game == null || s.game.moveNumber != game.moveNumber
-        if (!changed) s.copy(game = game)
-        else GameUiState(game = game, rack = game.rack.toList(), message = s.message)
+    private fun show(game: GameView) {
+        var changed = false
+        state.update { s ->
+            changed = s.game == null || s.game.moveNumber != game.moveNumber
+            if (!changed) s.copy(game = game)
+            else GameUiState(game = game, rack = game.rack.toList(), message = s.message, solo = backend.solo)
+        }
+        if (changed) analyseLastMove(game)
     }
 
     fun selectRackTile(index: Int) = state.update { s ->
@@ -153,7 +174,7 @@ class GameViewModel(
 
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
-            runCatching { api.deleteGame(gameId) }
+            runCatching { backend.delete() }
                 .onSuccess { onDeleted() }
                 .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
         }
@@ -165,13 +186,15 @@ class GameViewModel(
         val game = state.value.game ?: return
         state.update { it.copy(busy = true) }
         viewModelScope.launch {
-            runCatching { api.move(game, action) }
+            runCatching { backend.move(game, action) }
                 .onSuccess { show(it); state.update { s -> s.copy(message = null) } }
                 .onFailure { e ->
                     state.update { it.copy(message = e.userMessage()) }
                     if (e is ApiFailure && e.error.code == "STALE_GAME") refresh()
                 }
             state.update { it.copy(busy = false) }
+            // Solo: the bot answers right away (loading the game makes it play).
+            if (backend.solo && state.value.game?.let { it.status == GameStatus.ACTIVE && it.currentSeat != it.mySeat } == true) refresh()
         }
     }
 

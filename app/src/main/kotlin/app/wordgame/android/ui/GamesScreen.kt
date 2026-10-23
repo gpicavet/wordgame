@@ -38,7 +38,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.ApiClient
-import app.wordgame.android.Session
+import app.wordgame.android.SOLO_GAME_ID
+import app.wordgame.android.SoloStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import app.wordgame.android.R
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.res.painterResource
 import app.wordgame.engine.GameStatus
 import app.wordgame.protocol.GameSummary
 import kotlinx.coroutines.delay
@@ -53,13 +60,27 @@ data class GamesUiState(
     val message: String? = null,
 )
 
-class GamesViewModel(private val api: ApiClient) : ViewModel() {
+class GamesViewModel(private val api: ApiClient, private val solo: SoloStore) : ViewModel() {
     val state = MutableStateFlow(GamesUiState())
 
     suspend fun refresh() {
+        // The solo game lives on the phone: it is listed even when the server is unreachable.
+        val soloGame = withContext(Dispatchers.IO) { solo.summary() }?.let {
+            GameSummary(
+                SOLO_GAME_ID, "Nono-bot (débutant)", it.myScore, it.botScore, it.myTurn,
+                if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
+            )
+        }
         runCatching { api.games() }
-            .onSuccess { games -> state.update { it.copy(games = games, message = null) } }
-            .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
+            .onSuccess { games -> state.update { it.copy(games = listOfNotNull(soloGame) + games, message = null) } }
+            .onFailure { e -> state.update { it.copy(games = listOfNotNull(soloGame), message = e.userMessage()) } }
+    }
+
+    /** Opens the solo game in progress, or starts a new one. */
+    fun playSolo(onOpen: (String) -> Unit) = viewModelScope.launch {
+        val current = withContext(Dispatchers.IO) { solo.summary() }
+        if (current == null || current.finished) solo.start()
+        onOpen(SOLO_GAME_ID)
     }
 
     fun newGame(opponent: String, onCreated: (String) -> Unit) = viewModelScope.launch {
@@ -80,8 +101,8 @@ class GamesViewModel(private val api: ApiClient) : ViewModel() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesScreen(api: ApiClient, session: Session, nickname: String, onOpenGame: (String) -> Unit, onOpenStats: () -> Unit) {
-    val vm = viewModel { GamesViewModel(api) }
+fun GamesScreen(api: ApiClient, solo: SoloStore, nickname: String, onOpenGame: (String) -> Unit, onOpenStats: () -> Unit) {
+    val vm = viewModel { GamesViewModel(api, solo) }
     val state by vm.state.collectAsStateWithLifecycle()
     var showNewGame by remember { mutableStateOf(false) }
 
@@ -97,13 +118,17 @@ fun GamesScreen(api: ApiClient, session: Session, nickname: String, onOpenGame: 
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Parties de $nickname") }, actions = {
-        TextButton(onClick = onOpenStats) { Text("Stats") }
-        ServerButton(session)
+        IconButton(onClick = onOpenStats) {
+            Icon(painterResource(R.drawable.ic_stats), contentDescription = "Mes statistiques", tint = MaterialTheme.colorScheme.primary)
+        }
     }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                 Button(onClick = { showNewGame = true }) { Text("Défier un ami") }
                 OutlinedButton(onClick = { vm.findRandomOpponent(onOpenGame) }) { Text("Adversaire au hasard") }
+            }
+            OutlinedButton(onClick = { vm.playSolo(onOpenGame) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Jouer contre Nono-bot")
             }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
 

@@ -58,6 +58,8 @@ data class MoveRecord(
     /** Points added to (or removed from) each seat when this move ends the game; empty otherwise. */
     val endAdjustments: List<Int> = emptyList(),
     val end: GameEnd? = null,
+    /** The player's rack before the move, for the post-move analysis. Null for old moves and resignations. */
+    val rack: String? = null,
 )
 
 /** Why a game ended on this move (resignation and timeouts are told by the move type). */
@@ -101,12 +103,13 @@ object Game {
         if (state.status != GameStatus.ACTIVE) return MoveOutcome.Rejected(MoveError.GAME_FINISHED)
         if (action is Action.Resign) return resign(state, seat, MoveType.RESIGN)
         if (seat != state.currentPlayer) return MoveOutcome.Rejected(MoveError.NOT_YOUR_TURN)
-        return when (action) {
+        val outcome = when (action) {
             is Action.Play -> play(state, seat, action.tiles, words)
             is Action.Exchange -> exchange(state, seat, action.tiles, random)
             Action.Pass -> scoreless(state, MoveRecord(seat, MoveType.PASS), state.players)
             Action.Resign -> error("handled above")
         }
+        return if (outcome is MoveOutcome.Applied) outcome.copy(record = outcome.record.copy(rack = state.players[seat].rack)) else outcome
     }
 
     /** Resignation or turn timeout: the other player wins, whatever the score. */

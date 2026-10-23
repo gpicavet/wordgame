@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stats: a board with a simple rising chart. Flat, single color (tinted by the app). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Board -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.8"
+        android:pathData="M5,3.5h14a2,2 0,0 1,2 2v13a2,2 0,0 1,-2 2H5a2,2 0,0 1,-2 -2v-13a2,2 0,0 1,2 -2z" />
+    <!-- Bars -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M6.5,14.5h2.2v3H6.5z M10.9,12h2.2v5.5h-2.2z M15.3,9.5h2.2v8h-2.2z" />
+    <!-- Trend line -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M6.5,11.5L10.5,9L13.5,9.8L17.5,6.5" />
+</vector>

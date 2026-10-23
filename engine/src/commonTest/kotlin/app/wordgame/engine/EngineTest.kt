@@ -274,3 +274,19 @@ class EndOfGameTest {
         assertEquals(GameEnd.SCORELESS, outcome.record.end)
     }
 }
+
+class ExtraWordsTest {
+    @Test
+    fun parsesAccentsCommentsAndSeparators() {
+        val extra = ExtraWords.parse("# comment\nBÊ ÇA, HÉ\n  NÔ  # trailing\nvs\n")
+        assertEquals(setOf("BE", "CA", "HE", "NO", "VS"), extra.words)
+    }
+
+    @Test
+    fun unionAcceptsWordsFromBothLists() {
+        val words = WordList { it == "CHAT" } + ExtraWords.parse("OM TO")
+        assertTrue(words.contains("CHAT"))
+        assertTrue(words.contains("OM"))
+        assertFalse(words.contains("XYZ"))
+    }
+}

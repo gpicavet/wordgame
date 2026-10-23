@@ -1,6 +1,8 @@
 package app.wordgame.server
 
 import app.wordgame.engine.Dawg
+import app.wordgame.engine.ExtraWords
+import app.wordgame.engine.plus
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.CreateGameRequest
@@ -48,13 +50,18 @@ fun main() {
     val dictPath = env["WORDGAME_DICT"] ?: "dictionaries/bin/fr-libre.dawg"
     File(dbPath).absoluteFile.parentFile.mkdirs()
 
-    val dictionary = Dawg.fromBytes(File(dictPath).readBytes())
+    val extraPath = env["WORDGAME_EXTRA_DICT"] ?: "dictionaries/private/fr-2lettres.txt"
+    val dawg = Dawg.fromBytes(File(dictPath).readBytes())
+    // Optional private supplement (e.g. the official 2-letter words), on top of the free dictionary.
+    val extra = File(extraPath).takeIf { it.exists() }?.let { ExtraWords.parse(it.readText()) }
+    val dictionary = if (extra != null) dawg + extra else dawg
+    log.info("Extra words {}: {}", extraPath, extra?.words?.size ?: "absent")
     val db = Database(dbPath)
     // Push notifications are optional: without credentials the game works, players just are not notified.
     val notifier = env["WORDGAME_FCM_CREDENTIALS"]?.let(::File)?.takeIf { it.exists() }
         ?.let { FcmNotifier(it, db) } ?: NoNotifier.also { log.info("Push notifications disabled (no WORDGAME_FCM_CREDENTIALS)") }
     val service = GameService(db, dictionary, notifier = notifier)
-    log.info("Dictionary {}: {} edges, database {}", dictPath, dictionary.edgeCount, dbPath)
+    log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
 
     embeddedServer(
         CIO,

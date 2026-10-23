@@ -95,6 +95,11 @@ class ApiTest {
         assertTrue(after.players[after.mySeat].score > 0)
         assertEquals(letters[0], after.board[7][7])
 
+        // The rack before the move is kept for the analysis, and hidden from the opponent while playing.
+        assertEquals(game.rack, after.moves.single().rack)
+        val otherView: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(other.token) }.body()
+        assertEquals(null, otherView.moves.single().rack)
+
         // Replaying with the old move number is rejected.
         assertEquals(HttpStatusCode.Conflict, client.play(starter.token, game, Action.Pass).status)
 

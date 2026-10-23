@@ -78,7 +78,7 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
 
     val gameId = openGameId
     when {
-        nickname == null -> OnboardingScreen(container.api, container.session, onRegistered = { nickname = it })
+        nickname == null -> OnboardingScreen(container.api, onRegistered = { nickname = it })
         gameId != null -> {
             BackHandler { openGameId = null }
             GameScreen(container, gameId, onBack = { openGameId = null })
@@ -87,6 +87,6 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
             BackHandler { showStats = false }
             StatsScreen(container.api, onBack = { showStats = false })
         }
-        else -> GamesScreen(container.api, container.session, nickname!!, onOpenGame = { openGameId = it }, onOpenStats = { showStats = true })
+        else -> GamesScreen(container.api, container.solo, nickname!!, onOpenGame = { openGameId = it }, onOpenStats = { showStats = true })
     }
 }

@@ -60,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.AppContainer
 import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
+import app.wordgame.engine.Lexicon
 import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveType
@@ -76,21 +77,27 @@ private val DRAG_LIFT = 48.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
-    val vm = viewModel(key = gameId) { GameViewModel(gameId, container.api, container.dictionary) }
+    val vm = viewModel(key = gameId) { GameViewModel(container.backend(gameId), container.dictionary) }
     val state by vm.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
     var confirmResign by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showUnseen by remember { mutableStateOf(false) }
+    var showBestMoves by remember { mutableStateOf(false) }
+    var showAnalysis by remember { mutableStateOf(false) }
+    var lexicon by remember { mutableStateOf<Lexicon?>(null) }
+    LaunchedEffect(Unit) { lexicon = vm.lexicon() }
     var exchanging by remember { mutableStateOf(false) }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            // Always reload when the game is (re)opened: the opponent may have resigned during our turn.
+            vm.refresh()
             while (true) {
-                // Only poll while waiting for the opponent.
-                if (!vm.state.value.myTurn) vm.refresh()
                 delay(10.seconds)
+                // Then only poll while waiting for the opponent.
+                if (!vm.state.value.myTurn) vm.refresh()
             }
         }
     }
@@ -155,11 +162,18 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     ) { Text("⋯", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                 }
                 // Fixed height so the rack does not jump under the player's finger when a preview appears.
-                Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable { vm.dismissMessage() }) {
+                Box(
+                    Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable {
+                        if (state.message != null) vm.dismissMessage()
+                        else if (state.preview == null && state.lastMoveAnalysis != null) showBestMoves = true
+                    },
+                ) {
                     val preview = state.preview
                     val message = state.message
+                    val analysis = state.lastMoveAnalysis
                     when {
                         message != null -> Text(message, color = MaterialTheme.colorScheme.error, maxLines = 2)
+                        preview == null && analysis != null -> LastMoveAnalysisText(analysis)
                         preview != null -> Text(
                             preview.text,
                             color = if (preview.valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
@@ -169,7 +183,11 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     }
                 }
                 RackView(state, rules, drag, rackTarget, onTap = vm::selectRackTile, onDrop = onDrop)
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (game.status == GameStatus.FINISHED) {
+                    Button(onClick = { showAnalysis = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                        Text("Analyse de la partie")
+                    }
+                } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = vm::play,
                         enabled = state.myTurn && !state.busy && state.preview?.valid == true,
@@ -215,6 +233,12 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
             onResign = { menuOpen = false; confirmResign = true },
             onDelete = { menuOpen = false; confirmDelete = true },
         )
+    }
+    if (showBestMoves) state.lastMoveAnalysis?.let { BestMovesDialog(it, onDismiss = { showBestMoves = false }) }
+    if (showAnalysis) {
+        val g = state.game
+        val lex = lexicon
+        if (g != null && lex != null) GameAnalysisDialog(g, lex, onDismiss = { showAnalysis = false })
     }
     if (showUnseen) state.game?.let { UnseenTilesDialog(it, onDismiss = { showUnseen = false }) }
     if (confirmDelete) {

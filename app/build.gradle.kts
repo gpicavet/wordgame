@@ -19,14 +19,13 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        // Emulator -> host machine. Override with -PapiUrl=http://192.168.x.y:8080 for a real phone.
-        buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "http://10.0.2.2:8080"}\"")
+        // The VPS. For a local server: -PapiUrl=http://10.0.2.2:8080 (emulator) or http://<Mac IP>:8080 (phone).
+        buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://vps-0483f9f2.vps.ovh.ca"}\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://api.example.com"}\"")
         }
     }
 
@@ -42,6 +41,8 @@ android {
 
     // The DAWG built by :dict-builder, used for the live score preview.
     sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/bin"))
+    // Private word lists (not committed): bundled when present.
+    sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/private"))
 }
 
 kotlin { jvmToolchain(17) }

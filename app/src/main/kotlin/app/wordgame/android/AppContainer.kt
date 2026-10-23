@@ -3,7 +3,8 @@ package app.wordgame.android
 import android.app.Application
 import android.content.Context
 import app.wordgame.engine.Dawg
-import app.wordgame.engine.WordList
+import app.wordgame.engine.ExtraWords
+import app.wordgame.engine.Lexicon
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
@@ -52,6 +53,9 @@ class AppContainer(context: Context) {
     val session = Session(context)
     val api = ApiClient(session)
     val dictionary = DictionaryLoader(context)
+    val solo = SoloStore(context, dictionary, session)
+
+    fun backend(gameId: String): GameBackend = if (gameId == SOLO_GAME_ID) solo.backend else ServerBackend(api, gameId)
 }
 
 /** Account token. Losing it means losing the account until account linking exists. */
@@ -61,24 +65,33 @@ class Session(context: Context) {
     val token: String? get() = prefs.getString("token", null)
     val nickname: String? get() = prefs.getString("nickname", null)
 
-    /** Editable in debug builds so a new tunnel address does not need a new APK. */
-    var serverUrl: String
-        get() = prefs.getString("serverUrl", null) ?: BuildConfig.API_URL
-        set(value) = prefs.edit().putString("serverUrl", value.trim().trimEnd('/')).apply()
-
     fun save(auth: AuthResponse) {
         prefs.edit().putString("token", auth.token).putString("nickname", auth.nickname).apply()
     }
 }
 
+private const val EXTRA_WORDS = "fr-2lettres.txt"
+
 class DictionaryLoader(private val context: Context) {
     private val mutex = Mutex()
-    private var words: WordList? = null
+    private var lexicon: Lexicon? = null
 
-    suspend fun get(): WordList = mutex.withLock {
-        words ?: withContext(Dispatchers.IO) {
-            Dawg.fromBytes(context.assets.open("fr-libre.dawg").use { it.readBytes() })
-        }.also { words = it }
+    private var common: Dawg? = null
+
+    /** Everyday vocabulary, for the beginner bot. */
+    suspend fun common(): Dawg = mutex.withLock {
+        common ?: withContext(Dispatchers.IO) {
+            Dawg.fromBytes(context.assets.open("fr-courant.dawg").use { it.readBytes() })
+        }.also { common = it }
+    }
+
+    suspend fun get(): Lexicon = mutex.withLock {
+        lexicon ?: withContext(Dispatchers.IO) {
+            val dawg = Dawg.fromBytes(context.assets.open("fr-libre.dawg").use { it.readBytes() })
+            // Private supplement, bundled only when dictionaries/private/ exists at build time.
+            val extra = runCatching { context.assets.open(EXTRA_WORDS).bufferedReader().use { ExtraWords.parse(it.readText()) } }.getOrNull()
+            Lexicon(dawg, extra)
+        }.also { lexicon = it }
     }
 }
 
@@ -87,8 +100,7 @@ class ApiFailure(val error: ApiError) : Exception(error.message)
 class ApiClient(private val session: Session) {
     private val http = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(ApiJson) }
-        // Evaluated for every request, so a server address change applies immediately.
-        defaultRequest { url(session.serverUrl) }
+        defaultRequest { url(BuildConfig.API_URL) }
     }
 
     suspend fun register(nickname: String): AuthResponse =

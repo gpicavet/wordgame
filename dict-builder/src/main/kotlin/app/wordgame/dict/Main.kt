@@ -23,6 +23,8 @@ fun main(args: Array<String>) {
     val out = File(args[1])
 
     val words = sortedSetOf<String>()
+    // Everyday vocabulary for the beginner bot: forms with a frequency index of at least COMMON_INDEX.
+    val common = sortedSetOf<String>()
     var header: List<String>? = null
     source.useLines { lines ->
         for (line in lines) {
@@ -39,7 +41,9 @@ fun main(args: Array<String>) {
             val notes = cols[h.indexOf("Notes")].split(' ')
             if (tags.any { it in EXCLUDED_TAGS || it.startsWith("loc.") }) continue
             if (notes.any { it in EXCLUDED_NOTES }) continue
-            normalize(form)?.let(words::add)
+            val word = normalize(form) ?: continue
+            words.add(word)
+            if ((cols[h.indexOf("Indice de fréquence")].toIntOrNull() ?: 0) >= COMMON_INDEX) common.add(word)
         }
     }
     val fromLexicon = words.size
@@ -55,11 +59,18 @@ fun main(args: Array<String>) {
 
     File(out, "bin").mkdirs()
     File(out, "bin/fr-libre.dawg").writeBytes(dawg.toBytes())
+    common.retainAll(words)
+    val commonDawg = DawgBuilder().apply { common.forEach(::add) }.build()
+    File(out, "bin/fr-courant.dawg").writeBytes(commonDawg.toBytes())
+    println("${common.size} common words, ${commonDawg.edgeCount * 4 / 1024} KiB")
     GZIPOutputStream(File(out, "fr-libre.txt.gz").outputStream()).bufferedWriter().use { w ->
         words.forEach { w.write(it); w.newLine() }
     }
     println("${words.size} words, ${dawg.edgeCount} edges, ${dawg.edgeCount * 4 / 1024} KiB")
 }
+
+/** Grammalecte frequency index (0-9, from large corpora): 6+ reads as everyday vocabulary. */
+private const val COMMON_INDEX = 6
 
 /** Proper nouns, first names, surnames, affixes and miscellaneous entries. */
 private val EXCLUDED_TAGS = setOf("npr", "prn_npr", "patr", "prenom", "nompr", "sfx", "pfx", "div", "err")

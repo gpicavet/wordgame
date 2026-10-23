@@ -333,7 +333,9 @@ class GameService(
         val state = game.state
         val moves = query("SELECT move_number, record, played_at FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
             val r = ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(2))
-            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3), r.endAdjustments, r.end)
+            // The opponent's racks stay secret while the game is on.
+            val rack = r.rack?.takeIf { r.seat == seat || state.status == GameStatus.FINISHED }
+            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3), r.endAdjustments, r.end, rack)
         }
         return GameView(
             id = game.id,

@@ -19,6 +19,8 @@ id wordgame >/dev/null 2>&1 || useradd --system --home /opt/wordgame --shell /us
 mkdir -p /opt/wordgame /var/lib/wordgame
 install -m 644 "$SRC/wordgame-server.jar" "$SRC/fr-libre.dawg" /opt/wordgame/
 install -m 755 "$SRC/backup.sh" /opt/wordgame/
+# Private extra words, only when provided.
+if [ -f "$SRC/fr-2lettres.txt" ]; then install -m 644 "$SRC/fr-2lettres.txt" /opt/wordgame/; fi
 chown -R wordgame:wordgame /var/lib/wordgame
 
 # Firebase key (secret): readable by the service only, and only installed when provided.

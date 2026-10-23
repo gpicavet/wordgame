@@ -31,6 +31,17 @@ class Dawg(private val edges: IntArray, val root: Int) : WordList {
         return false
     }
 
+    // Traversal API for the move generator. A node is the index of its first edge; 0 = no children.
+
+    /** Edge leaving [node] labelled [letter], or -1. */
+    fun edgeFor(node: Int, letter: Char): Int = if (node == 0) -1 else findEdge(node, letter - 'A' + 1) ?: -1
+
+    /** A word ends after [edge]. */
+    fun isTerminal(edge: Int) = edges[edge] and TERMINAL != 0
+
+    /** Node reached through [edge] (0 when the word cannot be extended). */
+    fun target(edge: Int) = edges[edge] ushr CHILD_SHIFT
+
     private fun findEdge(node: Int, letter: Int): Int? {
         var e = node
         while (true) {

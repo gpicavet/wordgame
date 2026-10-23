@@ -52,6 +52,8 @@ data class MoveView(
     /** Score change of each seat when this move ended the game (going out, blocked game…). */
     val endAdjustments: List<Int> = emptyList(),
     val end: GameEnd? = null,
+    /** Rack before the move: only for the player's own moves, and for everybody once the game is over. */
+    val rack: String? = null,
 )
 
 /** What one player is allowed to see: their own rack only, and the bag size. */

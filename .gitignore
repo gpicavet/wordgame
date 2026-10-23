@@ -9,3 +9,4 @@ local.properties
 dictionaries/source/
 app/google-services.json
 secrets/
+dictionaries/private/
