@@ -3,6 +3,7 @@ package app.wordgame.dict
 import app.wordgame.engine.DawgBuilder
 import java.io.File
 import java.text.Normalizer
+import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 /**
@@ -57,6 +58,13 @@ fun main(args: Array<String>) {
     val excludedLocutions = readWordFile(File(out, "locutions-exclues.txt"))
     words.addAll(locutionOnly - excludedLocutions)
     val fromLexicon = words.size
+    // Words from the French Wiktionary (CC BY-SA), extracted by tools/wiktionnaire.py.
+    val wiktionary = File(out, "fr-wiktionnaire.txt.gz").takeIf { it.exists() }
+        ?.let { f -> GZIPInputStream(f.inputStream()).bufferedReader().readLines().filter { it.isNotBlank() }.toSet() }
+        .orEmpty()
+    val beforeWiktionary = words.size
+    words.addAll(wiktionary)
+    println("+${words.size - beforeWiktionary} words from the Wiktionary list (${wiktionary.size} in it)")
     val additions = readWordFile(File(out, "additions.txt"))
     val removals = readWordFile(File(out, "removals.txt"))
     words.addAll(additions)

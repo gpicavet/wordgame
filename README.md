@@ -34,6 +34,8 @@ curl -LO https://www.grammalecte.net/dic/lexique-grammalecte-fr-v7.7.zip && unzi
 
 Traitements appliqués : accents retirés, majuscules, mots de 2 à 15 lettres. Sont exclus les noms propres, les mots à majuscule initiale, ceux qui contiennent un trait d'union ou une apostrophe, et ceux dont certains caractères ne correspondent à aucune lettre. Sont aussi exclus les symboles et abréviations (km, kg, cf…), les affixes, les formes fautives et les mots qui n'existent qu'à l'intérieur d'une locution (le « ad » de « ad hoc »).
 
+Compléments du **Wiktionnaire** (CC BY-SA 4.0) : `dictionaries/fr-wiktionnaire.txt.gz`, produit par `tools/wiktionnaire.py` à partir de l'extrait de kaikki.org (commande en tête du script). Ne sont gardés que les mots de 5 lettres ou plus, issus de noms, adjectifs, verbes, adverbes ou interjections traduits dans au moins une autre langue (trois pour les verbes), sans gentilés, sigles, abréviations ni noms propres, avec leurs formes fléchies. Cette liste est publiée sous la même licence CC BY-SA.
+
 Dictionnaire additionnel privé : `dictionaries/private/fr-2lettres.txt` (non versionné), chargé en plus du dictionnaire libre par le serveur (`WORDGAME_EXTRA_DICT`) et intégré à l'application quand le fichier existe à la compilation.
 
 Corrections manuelles : `dictionaries/additions.txt` et `dictionaries/removals.txt`, un mot par ligne. N'y ajouter que des mots attestés dans une source libre (Wiktionnaire…), jamais une liste recopiée de l'ODS. Il faut relancer le générateur après chaque modification. La liste obtenue est publiée dans `dictionaries/fr-libre.txt.gz`, comme l'exige la MPL. Ce n'est **pas** l'ODS : certains mots propres au jeu de compétition (ZA, KA…) n'y figurent pas.

@@ -4,3 +4,7 @@ za    # pizza (familier), Wiktionnaire
 zas
 ka    # variante de kaa, Wiktionnaire
 kas
+éwé   # langue d'Afrique de l'Ouest, Wiktionnaire ; absent du lexique Grammalecte
+éwés
+kéa   # perroquet de Nouvelle-Zélande, Wiktionnaire ; absent du lexique Grammalecte
+kéas
