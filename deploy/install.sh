@@ -36,6 +36,7 @@ install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
 install -m 644 "$SRC/wordgame-backup.service" "$SRC/wordgame-backup.timer" /etc/systemd/system/
 
 systemctl daemon-reload
-systemctl enable --now wordgame
+systemctl enable wordgame
+systemctl restart wordgame
 systemctl enable --now wordgame-backup.timer
 systemctl reload caddy

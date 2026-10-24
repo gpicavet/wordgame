@@ -15,7 +15,7 @@ dependencyResolutionManagement {
     }
 }
 
-include(":engine", ":protocol", ":dict-builder", ":server")
+include(":engine", ":protocol", ":dict-builder", ":server", ":trainer")
 
 // The Android app needs an Android SDK; engine and server build without one.
 val hasAndroidSdk = System.getenv("ANDROID_HOME") != null || file("local.properties").exists()

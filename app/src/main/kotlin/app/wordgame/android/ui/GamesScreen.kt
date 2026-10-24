@@ -40,7 +40,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.wordgame.android.ApiClient
 import app.wordgame.android.push.Push
-import app.wordgame.android.SOLO_GAME_ID
+import app.wordgame.android.SoloBot
 import app.wordgame.android.SoloStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,27 +62,32 @@ data class GamesUiState(
     val message: String? = null,
 )
 
-class GamesViewModel(private val api: ApiClient, private val solo: SoloStore) : ViewModel() {
+class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStore>) : ViewModel() {
     val state = MutableStateFlow(GamesUiState())
 
     suspend fun refresh() {
-        // The solo game lives on the phone: it is listed even when the server is unreachable.
-        val soloGame = withContext(Dispatchers.IO) { solo.summary() }?.let {
-            GameSummary(
-                SOLO_GAME_ID, "Nono-bot (débutant)", it.myScore, it.botScore, it.myTurn,
-                if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
-            )
+        // Solo games live on the phone: they are listed even when the server is unreachable.
+        val soloGames = withContext(Dispatchers.IO) {
+            solo.mapNotNull { store ->
+                store.summary()?.let {
+                    GameSummary(
+                        store.bot.gameId, "${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
+                        if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
+                    )
+                }
+            }
         }
         attempt { api.games() }
-            .onSuccess { games -> state.update { it.copy(games = listOfNotNull(soloGame) + games, message = null) } }
-            .onFailure { e -> state.update { it.copy(games = listOfNotNull(soloGame), message = e.userMessage()) } }
+            .onSuccess { games -> state.update { it.copy(games = soloGames + games, message = null) } }
+            .onFailure { e -> state.update { it.copy(games = soloGames, message = e.userMessage()) } }
     }
 
-    /** Opens the solo game in progress, or starts a new one. */
-    fun playSolo(onOpen: (String) -> Unit) = viewModelScope.launch {
-        val current = withContext(Dispatchers.IO) { solo.summary() }
-        if (current == null || current.finished) solo.start()
-        onOpen(SOLO_GAME_ID)
+    /** Opens the game in progress against [bot], or starts a new one. */
+    fun playSolo(bot: SoloBot, onOpen: (String) -> Unit) = viewModelScope.launch {
+        val store = solo.first { it.bot == bot }
+        val current = withContext(Dispatchers.IO) { store.summary() }
+        if (current == null || current.finished) store.start()
+        onOpen(bot.gameId)
     }
 
     fun newGame(opponent: String, onCreated: (String) -> Unit) = viewModelScope.launch {
@@ -103,7 +108,7 @@ class GamesViewModel(private val api: ApiClient, private val solo: SoloStore) : 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesScreen(api: ApiClient, solo: SoloStore, nickname: String, onOpenGame: (String) -> Unit, onOpenStats: () -> Unit) {
+fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenGame: (String) -> Unit, onOpenStats: () -> Unit) {
     val vm = viewModel { GamesViewModel(api, solo) }
     val state by vm.state.collectAsStateWithLifecycle()
     var showNewGame by remember { mutableStateOf(false) }
@@ -131,8 +136,13 @@ fun GamesScreen(api: ApiClient, solo: SoloStore, nickname: String, onOpenGame: (
                 Button(onClick = { showNewGame = true }) { Text("Défier un ami") }
                 OutlinedButton(onClick = { vm.findRandomOpponent(onOpenGame) }) { Text("Adversaire au hasard") }
             }
-            OutlinedButton(onClick = { vm.playSolo(onOpenGame) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Jouer contre Nono-bot")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { vm.playSolo(SoloBot.NONO, onOpenGame) }, modifier = Modifier.weight(1f)) {
+                    Text("Contre Nono-bot")
+                }
+                OutlinedButton(onClick = { vm.playSolo(SoloBot.BELZE, onOpenGame) }, modifier = Modifier.weight(1f)) {
+                    Text("Contre Belzé-bot")
+                }
             }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
 

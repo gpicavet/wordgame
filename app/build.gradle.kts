@@ -43,6 +43,8 @@ android {
     sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/bin"))
     // Private word lists (not committed): bundled when present.
     sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/private"))
+    // Learned weights of the expert bot (trainer module).
+    sourceSets["main"].assets.srcDir(rootProject.file("models"))
 }
 
 kotlin { jvmToolchain(17) }

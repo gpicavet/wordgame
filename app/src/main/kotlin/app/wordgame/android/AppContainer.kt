@@ -2,6 +2,7 @@ package app.wordgame.android
 
 import android.app.Application
 import android.content.Context
+import app.wordgame.engine.Afterstate
 import app.wordgame.engine.Dawg
 import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
@@ -57,9 +58,10 @@ class AppContainer(context: Context) {
     val session = Session(context)
     val api = ApiClient(session)
     val dictionary = DictionaryLoader(context)
-    val solo = SoloStore(context, dictionary, session)
+    val solo: List<SoloStore> = SoloBot.entries.map { SoloStore(context, dictionary, session, it) }
 
-    fun backend(gameId: String): GameBackend = if (gameId == SOLO_GAME_ID) solo.backend else ServerBackend(api, gameId)
+    fun backend(gameId: String): GameBackend =
+        SoloBot.byGameId(gameId)?.let { bot -> solo.first { it.bot == bot }.backend } ?: ServerBackend(api, gameId)
 }
 
 /** Account token. Losing it means losing the account until account linking exists. */
@@ -82,7 +84,16 @@ class DictionaryLoader(private val context: Context) {
 
     private var common: Dawg? = null
 
-    /** Everyday vocabulary, for the beginner bot. */
+    private var expert: DoubleArray? = null
+
+    /** Belzé-bot's learned weights (models/value-v1.txt). */
+    suspend fun expertWeights(): DoubleArray = mutex.withLock {
+        expert ?: withContext(Dispatchers.IO) {
+            Afterstate.parseWeights(context.assets.open("value-v1.txt").bufferedReader().use { it.readText() })
+        }.also { expert = it }
+    }
+
+    /** Everyday vocabulary, for the bots. */
     suspend fun common(): Dawg = mutex.withLock {
         common ?: withContext(Dispatchers.IO) {
             Dawg.fromBytes(context.assets.open("fr-courant.dawg").use { it.readBytes() })
