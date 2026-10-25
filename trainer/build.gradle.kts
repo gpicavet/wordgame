@@ -8,6 +8,7 @@ kotlin { jvmToolchain(17) }
 dependencies {
     implementation(project(":engine"))
     implementation(libs.kotlinx.coroutines.core)
+    testImplementation(kotlin("test"))
 }
 
 application {
