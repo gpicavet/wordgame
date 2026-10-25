@@ -32,8 +32,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -109,17 +116,9 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    // 3 or 4 players: smaller, on up to two lines, so every name and score fits.
-                    val many = (game?.players?.size ?: 2) > 2
-                    Text(
-                        game?.let { scoreLine(it) } ?: "Chargement…",
-                        style = if (many) MaterialTheme.typography.titleMedium else LocalTextStyle.current,
-                        maxLines = if (many) 2 else 1,
-                    )
-                },
+                title = { if (game != null) PlayersHeader(game) else Text("Chargement…") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Text("←", fontSize = 22.sp) }
+                    BackButton(onBack)
                 },
             )
         },
@@ -269,16 +268,37 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     }
 }
 
-private fun scoreLine(game: GameView): String {
-    val me = game.players[game.mySeat]
-    val others = game.players.filterIndexed { i, _ -> i != game.mySeat }
-    others.singleOrNull()?.let { return "${me.score} – ${it.score} ${it.nickname}" }
-    // 3 or 4 players: everybody's name and score, mine first; long human nicknames are shortened, robot names
-    // are kept whole for their number ("NonoBot 2"); eliminated players are crossed out.
-    return (listOf(me) + others).joinToString(" · ") {
-        val name = if (it.bot) it.nickname else it.nickname.take(10)
-        // Score in parentheses: a robot's number would otherwise run into it ("NonoBot 2 (31)").
-        "$name${if (it.eliminated) " ✕" else ""} (${it.score})"
+/**
+ * One equal cell per player, in turn order: name then score on one line, the font shrinking until the longest
+ * fits. The player to play is highlighted; eliminated players are crossed out.
+ */
+@Composable
+private fun PlayersHeader(game: GameView) {
+    Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        game.players.forEachIndexed { seat, player ->
+            val current = game.status == GameStatus.ACTIVE && seat == game.currentSeat
+            val text = buildAnnotatedString {
+                withStyle(SpanStyle(
+                    color = if (player.eliminated) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (player.eliminated) TextDecoration.LineThrough else null,
+                    fontWeight = if (seat == game.mySeat) FontWeight.Bold else FontWeight.Normal,
+                )) { append(player.nickname) }
+                append(" ")
+                withStyle(SpanStyle(color = BoardColors.score, fontWeight = FontWeight.Bold)) { append(player.score.toString()) }
+            }
+            Box(
+                Modifier.weight(1f).height(40.dp)
+                    .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(
+                    text,
+                    maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 20.sp, stepSize = 0.5.sp),
+                )
+            }
+        }
     }
 }
 
@@ -401,6 +421,15 @@ private fun RackView(
     if (dragged != null && target != null) order.add(target, order.removeAt(dragged))
     val pitch = drag.rackSlots[1]?.left?.minus(drag.rackSlots[0]?.left ?: 0f) ?: 0f
 
+    // Shuffle: from 1 (each tile at its former slot) to 0 (at its new one), along an arc. Created at 1 in the
+    // same composition as the new order, so no frame ever shows the new order before the tiles start moving.
+    val shuffle = remember(state.shuffles) { Animatable(if (state.shuffles == 0) 0f else 1f) }
+    LaunchedEffect(shuffle) { shuffle.animateTo(0f, tween(durationMillis = 500, easing = FastOutSlowInEasing)) }
+    val lift = with(LocalDensity.current) { 18.dp.toPx() }
+    // Recall: from 1 (the tile on its square, at the square's size) to 0 (in its rack slot).
+    val recall = remember(state.recalls) { Animatable(if (state.recalls == 0) 0f else 1f) }
+    LaunchedEffect(recall) { recall.animateTo(0f, tween(durationMillis = 500, easing = FastOutSlowInEasing)) }
+
     // Always rackSize slots: tiles keep their size when the bag is empty and the rack shrinks.
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (i in 0 until rules.rackSize) {
@@ -423,7 +452,28 @@ private fun RackView(
                 Modifier.weight(1f).aspectRatio(1f)
                     // Slot bounds are measured before the visual shift.
                     .dropTargetBounds { drag.rackSlots[i] = it }
-                    .graphicsLayer { translationX = shift.value }
+                    .graphicsLayer {
+                        val p = shuffle.value
+                        val from = state.shuffledFrom.getOrNull(i) ?: i
+                        translationX = shift.value + (from - i) * pitch * p
+                        // Every other tile passes above, the others below, so they do not run into each other.
+                        val arc = kotlin.math.sin(p * Math.PI).toFloat()
+                        translationY = (if (i % 2 == 0) -lift else lift) * arc
+                        rotationZ = (from - i) * 4f * arc
+
+                        val square = state.recalledFrom[i]
+                        val slot = drag.rackSlots[i]
+                        val board = drag.boardBounds
+                        val r = recall.value
+                        if (square != null && slot != null && board != null && r > 0f) {
+                            val cell = board.width / rules.boardSize
+                            translationX += (board.left + (square.second + 0.5f) * cell - slot.center.x) * r
+                            translationY += (board.top + (square.first + 0.5f) * cell - slot.center.y) * r
+                            val scale = 1f + (cell / slot.width - 1f) * r
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                    }
                     .dragSource(drag, DragSource.Rack(i), tile, enabled = !state.isUsed(i), onDrop = onDrop)
                     .background(if (hidden) BoardColors.square else BoardColors.tile, RoundedCornerShape(6.dp))
                     .then(if (state.selected == i) Modifier.border(3.dp, BoardColors.tentativeTile, RoundedCornerShape(6.dp)) else Modifier)

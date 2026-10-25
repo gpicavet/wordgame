@@ -69,7 +69,7 @@ fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Mes statistiques") },
-                navigationIcon = { IconButton(onClick = onBack) { Text("←", fontSize = 22.sp) } },
+                navigationIcon = { BackButton(onBack) },
             )
         },
     ) { padding ->

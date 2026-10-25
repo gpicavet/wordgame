@@ -19,6 +19,8 @@ object BoardColors {
     val tentativeTile = Color(0xFF2A9D8F)
     val lastMoveTile = Color(0xFF4A6580)
     val center = Color(0xFFCBD5DC)
+    /** Scores in the players' header: a warm color that stands out from the teal of the interface. */
+    val score = Color(0xFFC2410C)
 
     fun premium(p: Premium) = when (p) {
         Premium.DOUBLE_LETTER -> Color(0xFFB5D3C7)

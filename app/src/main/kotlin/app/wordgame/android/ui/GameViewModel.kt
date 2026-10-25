@@ -39,6 +39,12 @@ data class GameUiState(
     val message: String? = null,
     val lastMoveAnalysis: MoveAnalysis? = null,
     val solo: Boolean = false,
+    /** Last shuffle, for its animation: the slot each tile of [rack] came from, and a counter that restarts it. */
+    val shuffledFrom: List<Int> = emptyList(),
+    val shuffles: Int = 0,
+    /** Last recall (tap on a placed tile, or "Reprendre"), for its animation: rack slot -> square it left. */
+    val recalledFrom: Map<Int, Pair<Int, Int>> = emptyMap(),
+    val recalls: Int = 0,
 ) {
     val myTurn get() = game != null && game.status == GameStatus.ACTIVE && game.currentSeat == game.mySeat
 
@@ -99,7 +105,7 @@ class GameViewModel(
         val s = state.value
         val existing = s.tentativeAt(row, col)
         if (existing != null) {
-            updateTentative(s.tentative - existing)
+            recallTiles(listOf(existing))
             return
         }
         placeFromRack(s.selected ?: return, row, col)
@@ -158,9 +164,26 @@ class GameViewModel(
         updateTentative(s.tentative + Tentative(index, Placement(square.first, square.second, letter, blank = true)))
     }
 
-    fun recall() = updateTentative(emptyList())
+    fun recall() = recallTiles(state.value.tentative)
 
-    fun shuffle() = state.update { it.copy(rack = it.rack.shuffled(), tentative = emptyList(), selected = null, preview = null) }
+    /** Sends [tiles] back to their rack slots, flying from their squares. */
+    private fun recallTiles(tiles: List<Tentative>) {
+        if (tiles.isEmpty()) return
+        updateTentative(state.value.tentative - tiles.toSet())
+        state.update { s ->
+            s.copy(recalledFrom = tiles.associate { it.rackIndex to (it.placement.row to it.placement.col) }, recalls = s.recalls + 1)
+        }
+    }
+
+    fun shuffle() = state.update { s ->
+        // A new order every time (when there is more than one letter), otherwise the button seems broken.
+        var from = s.rack.indices.shuffled()
+        while (s.rack.size > 1 && from.map { s.rack[it] } == s.rack) from = s.rack.indices.shuffled()
+        s.copy(
+            rack = from.map { s.rack[it] }, tentative = emptyList(), selected = null, preview = null,
+            shuffledFrom = from, shuffles = s.shuffles + 1,
+        )
+    }
 
     fun play() = send(Action.Play(state.value.tentative.map { it.placement }))
 
