@@ -335,6 +335,24 @@ class ApiTest {
     }
 
     @Test
+    fun noNotificationWhenPlayingAloneAgainstRobots() {
+        val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
+        val sent = mutableListOf<Notification>()
+        val service = GameService(Database(dbFile.path), words, notifier = { sent += it }, bots = listOf(passingBot))
+        testApplication {
+            application { wordgame(service) }
+            val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
+            val alice = client.register("alice")
+            val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono", "nono"))).body()
+            repeat(3) {
+                val v = client.view(alice.token, game.id)
+                client.play(alice.token, v, Action.Pass)
+            }
+            assertEquals(emptyList(), sent)
+        }
+    }
+
+    @Test
     fun sameRobotTwice() = withApp(listOf(passingBot)) { client, _ ->
         val alice = client.register("alice")
         val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono", "nono"))).body()

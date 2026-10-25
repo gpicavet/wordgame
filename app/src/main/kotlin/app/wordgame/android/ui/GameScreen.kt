@@ -32,6 +32,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -108,7 +109,15 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(game?.let { scoreLine(it) } ?: "Chargement…") },
+                title = {
+                    // 3 or 4 players: smaller, on up to two lines, so every name and score fits.
+                    val many = (game?.players?.size ?: 2) > 2
+                    Text(
+                        game?.let { scoreLine(it) } ?: "Chargement…",
+                        style = if (many) MaterialTheme.typography.titleMedium else LocalTextStyle.current,
+                        maxLines = if (many) 2 else 1,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Text("←", fontSize = 22.sp) }
                 },
@@ -264,8 +273,13 @@ private fun scoreLine(game: GameView): String {
     val me = game.players[game.mySeat]
     val others = game.players.filterIndexed { i, _ -> i != game.mySeat }
     others.singleOrNull()?.let { return "${me.score} – ${it.score} ${it.nickname}" }
-    // 3 or 4 players: my score, then each opponent's (eliminated ones crossed out).
-    return "${me.score} · " + others.joinToString(" · ") { "${it.nickname.take(8)}${if (it.eliminated) "✕" else ""} ${it.score}" }
+    // 3 or 4 players: everybody's name and score, mine first; long human nicknames are shortened, robot names
+    // are kept whole for their number ("NonoBot 2"); eliminated players are crossed out.
+    return (listOf(me) + others).joinToString(" · ") {
+        val name = if (it.bot) it.nickname else it.nickname.take(10)
+        // Score in parentheses: a robot's number would otherwise run into it ("NonoBot 2 (31)").
+        "$name${if (it.eliminated) " ✕" else ""} (${it.score})"
+    }
 }
 
 private fun statusLine(game: GameView, state: GameUiState): String {

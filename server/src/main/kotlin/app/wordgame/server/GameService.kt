@@ -312,8 +312,12 @@ class GameService(
         return Notification(to.id, title, if (theirTurn) "$body. À toi de jouer !" else "$body.", game.id)
     }
 
-    /** Who to tell what after a move: the next player, or everybody else when the game is over. */
+    /**
+     * Who to tell what after a move: the next player, or everybody else when the game is over. Nobody when a
+     * single human plays against robots: they answer at once, there is nothing to wait for.
+     */
     private fun afterMove(game: StoredGame, state: GameState, record: MoveRecord): List<Notification> {
+        if (game.seats.count { it.bot == null } <= 1) return emptyList()
         val mover = game.seats[record.seat]
         val what = when (record.type) {
             MoveType.PLAY -> "${mover.nickname} a joué ${record.words.joinToString { it.word }} (+${record.score}" +
