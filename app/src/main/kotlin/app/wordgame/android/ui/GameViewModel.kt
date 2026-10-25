@@ -43,7 +43,7 @@ data class GameUiState(
     val myTurn get() = game != null && game.status == GameStatus.ACTIVE && game.currentSeat == game.mySeat
 
     /** Online: until every player has made a move (same rule as the server). Solo: always. */
-    val canDelete get() = game != null && (solo || game.moves.map { it.seat }.toSet().size < game.players.size)
+    val canDelete get() = game != null && (solo || game.players.indices.any { seat -> !game.players[seat].bot && game.moves.none { it.seat == seat } })
     fun tentativeAt(row: Int, col: Int) = tentative.firstOrNull { it.placement.row == row && it.placement.col == col }
     fun isUsed(rackIndex: Int) = tentative.any { it.rackIndex == rackIndex }
 }

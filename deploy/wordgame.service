@@ -12,6 +12,9 @@ Environment=WORDGAME_DB=/var/lib/wordgame/wordgame.db
 Environment=WORDGAME_DICT=/opt/wordgame/fr-libre.dawg
 # Private extra words (optional): loaded on top of the dictionary when the file exists.
 Environment=WORDGAME_EXTRA_DICT=/opt/wordgame/fr-2lettres.txt
+# Robots in online games: everyday vocabulary and BelzéBot's learned weights (no robots without them).
+Environment=WORDGAME_COMMON_DICT=/opt/wordgame/fr-courant.dawg
+Environment=WORDGAME_BOT_WEIGHTS=/opt/wordgame/value-v2.txt
 # Firebase service-account key; without it the server runs without push notifications.
 Environment=WORDGAME_FCM_CREDENTIALS=/etc/wordgame/fcm-service-account.json
 # Measured ~125 MB RSS under load with these limits (Stardust: 1 GB RAM).

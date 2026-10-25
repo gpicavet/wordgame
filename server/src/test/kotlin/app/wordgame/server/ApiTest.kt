@@ -41,9 +41,9 @@ class ApiTest {
     /** Accepts any word of 2+ letters except "ZZZ", so tests do not depend on random racks. */
     private val words = WordList { it.length >= 2 && it != "ZZZ" }
 
-    private fun withApp(block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit) {
+    private fun withApp(bots: List<ServerBot> = emptyList(), block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit) {
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
-        val service = GameService(Database(dbFile.path), words)
+        val service = GameService(Database(dbFile.path), words, bots = bots)
         testApplication {
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
@@ -279,5 +279,89 @@ class ApiTest {
             assertEquals(GameStatus.FINISHED, after.status)
             assertEquals(1 - game.currentSeat, after.winnerSeat)
         }
+    }
+
+    private suspend fun HttpClient.create(token: String, request: CreateGameRequest) =
+        post("/api/v1/games") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+
+    private suspend fun HttpClient.view(token: String, id: String): GameView =
+        get("/api/v1/games/$id") { bearerAuth(token) }.body()
+
+    /** A robot that always passes: enough to check that the server plays its turns. */
+    private val passingBot = ServerBot("nono", "NonoBot") { _, _, _ -> Action.Pass }
+
+    @Test
+    fun fourPlayerGameWithARobotAndEliminations() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val carol = client.register("carol")
+        val created: GameView = client.create(alice.token, CreateGameRequest(friends = listOf("bob", "carol"), bots = listOf("nono"))).body()
+        assertEquals(4, created.players.size)
+        assertEquals(listOf("NonoBot"), created.players.filter { it.bot }.map { it.nickname })
+        // The robot has already played if it was first: a human is always to play.
+        assertTrue(!created.players[created.currentSeat].bot)
+
+        val tokens = mapOf("alice" to alice.token, "bob" to bob.token, "carol" to carol.token)
+        val botSeat = created.players.indexOfFirst { it.bot }
+        // Humans resign one after the other: each is eliminated, the others play on.
+        val humans = created.players.filter { !it.bot }.map { it.nickname }
+        for ((i, name) in humans.withIndex()) {
+            val game = client.view(tokens.getValue(name), created.id)
+            assertEquals(HttpStatusCode.OK, client.play(tokens.getValue(name), game, Action.Resign).status)
+            val after = client.view(tokens.getValue(name), created.id)
+            if (i < humans.size - 1) {
+                assertEquals(GameStatus.ACTIVE, after.status)
+                assertTrue(after.players.single { it.nickname == name }.eliminated)
+                assertTrue(!after.players[after.currentSeat].bot && !after.players[after.currentSeat].eliminated)
+            } else {
+                assertEquals(GameStatus.FINISHED, after.status)
+                assertEquals(botSeat, after.winnerSeat)
+            }
+        }
+        val summary: List<GameSummary> = client.get("/api/v1/games") { bearerAuth(bob.token) }.body()
+        assertTrue("NonoBot" in summary.single().opponent && "alice" in summary.single().opponent)
+    }
+
+    @Test
+    fun gameAgainstRobotsOnly() = withApp(listOf(passingBot, ServerBot("belze", "BelzéBot") { _, _, _ -> Action.Pass })) { client, _ ->
+        val alice = client.register("alice")
+        val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono", "belze"))).body()
+        assertEquals(3, game.players.size)
+        assertEquals("alice", game.players[game.currentSeat].nickname)
+    }
+
+    @Test
+    fun sameRobotTwice() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono", "nono"))).body()
+        assertEquals(setOf("NonoBot 1", "NonoBot 2"), game.players.filter { it.bot }.map { it.nickname }.toSet())
+    }
+
+    @Test
+    fun rejectsInvalidPlayerChoices() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        client.register("bob")
+        client.register("carol")
+        client.register("dave")
+        client.register("erin")
+        val cases = listOf(
+            CreateGameRequest() to "NO_OPPONENT",
+            CreateGameRequest(friends = listOf("bob", "carol", "dave", "erin")) to "TOO_MANY_PLAYERS",
+            CreateGameRequest(friends = listOf("bob", "carol", "dave"), bots = listOf("nono")) to "TOO_MANY_PLAYERS",
+            CreateGameRequest(friends = listOf("bob", "BOB")) to "DUPLICATE_PLAYER",
+            CreateGameRequest(friends = listOf("bob"), bots = listOf("terminator")) to "UNKNOWN_BOT",
+            CreateGameRequest(friends = listOf("alice")) to "SELF_GAME",
+        )
+        for ((request, code) in cases) {
+            val response = client.create(alice.token, request)
+            assertEquals(code, response.body<ApiError>().code, "$request")
+        }
+        // Robots cannot be invited by name, as friends.
+        client.create(alice.token, CreateGameRequest(friends = listOf("bob"), bots = listOf("nono")))
+        assertEquals("UNKNOWN_PLAYER", client.create(alice.token, CreateGameRequest(friends = listOf("NonoBot"))).body<ApiError>().code)
     }
 }

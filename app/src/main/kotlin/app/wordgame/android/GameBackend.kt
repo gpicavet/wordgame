@@ -4,6 +4,7 @@ import android.content.Context
 import app.wordgame.engine.Action
 import app.wordgame.engine.BeginnerBot
 import app.wordgame.engine.ValueBot
+import app.wordgame.engine.bingoAllowed
 import app.wordgame.engine.Game
 import app.wordgame.engine.GameState
 import app.wordgame.engine.GameStatus
@@ -41,9 +42,10 @@ class ServerBackend(private val api: ApiClient, private val gameId: String) : Ga
 }
 
 /** Solo opponents. Each has its own game in progress, saved in its own file. */
-enum class SoloBot(val gameId: String, val displayName: String, val level: String, val file: String) {
-    NONO("solo", "Nono-bot", "débutant", "solo.json"),
-    BELZE("solo-belze", "Belzé-bot", "expert", "solo-belze.json");
+/** [serverLevel]: the same robot in online games ([app.wordgame.protocol.CreateGameRequest.bots]). */
+enum class SoloBot(val gameId: String, val displayName: String, val level: String, val file: String, val serverLevel: String) {
+    NONO("solo", "NonoBot", "débutant", "solo.json", "nono"),
+    BELZE("solo-belze", "BelzéBot", "expert", "solo-belze.json", "belze");
 
     companion object {
         fun byGameId(id: String) = entries.firstOrNull { it.gameId == id }
@@ -62,8 +64,8 @@ data class SoloSummary(val myScore: Int, val botScore: Int, val myTurn: Boolean,
 /**
  * One solo game against [bot], saved in a file on the phone. Same rules engine as the server.
  * The player is seat 0. The bot plays when the game is loaded and it is its turn.
- * - Nono-bot: [BeginnerBot] (everyday words, not always the best move);
- * - Belzé-bot: [ValueBot] with the weights learned by self-play (models/value-v1.txt), everyday words too.
+ * - NonoBot: [BeginnerBot] (everyday words, not always the best move);
+ * - BelzéBot: [ValueBot] with the weights learned by self-play (models/value-v2.txt), everyday words too.
  */
 class SoloStore(
     context: Context,
@@ -129,7 +131,7 @@ class SoloStore(
         val action = when (bot) {
             SoloBot.NONO -> BeginnerBot(dictionary.get(), dictionary.common(), random).play(game.state, 1)
             SoloBot.BELZE -> ValueBot(dictionary.get(), dictionary.expertWeights(), random, vocabulary = dictionary.common())
-                .decide(game.state, 1).action
+                .decide(game.state, 1, bingoAllowed(game.moves.map { it.record }, 1, random)).action
         }
         val outcome = Game.apply(game.state, 1, action, dictionary.get().words, random)
         check(outcome is MoveOutcome.Applied) { "Bot move rejected: $outcome" }

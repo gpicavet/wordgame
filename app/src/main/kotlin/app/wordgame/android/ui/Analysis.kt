@@ -1,9 +1,11 @@
 package app.wordgame.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,8 @@ import app.wordgame.engine.Board
 import app.wordgame.engine.Candidate
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.MoveType
+import app.wordgame.engine.Placement
+import app.wordgame.engine.Premium
 import app.wordgame.engine.RuleSet
 import app.wordgame.engine.Solver
 import app.wordgame.protocol.GameView
@@ -38,8 +42,8 @@ import app.wordgame.protocol.MoveView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** One of the player's moves next to the best ones that were possible with the same rack. */
-data class MoveAnalysis(val move: MoveView, val best: List<Candidate>) {
+/** One of the player's moves next to the best ones that were possible with the same rack, on the board [before] it. */
+data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val before: Board) {
     val played: String get() = when (move.type) {
         MoveType.PLAY -> "${move.words.first().word} (${move.score})"
         MoveType.EXCHANGE -> "Échange de ${move.exchangedCount} lettre(s)"
@@ -64,44 +68,77 @@ suspend fun analyse(game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boole
         val targets = if (onlyLast) analysed.takeLast(1) else analysed
         targets.map { (index, move) ->
             val before = game.moves.take(index).fold(Board.empty(rules.boardSize)) { b, m -> b.with(m.tiles) }
-            MoveAnalysis(move, solver.bestMoves(before, move.rack!!, 5))
+            MoveAnalysis(move, solver.bestMoves(before, move.rack!!, 5), before)
         }
     }
 
 private fun Candidate.label() = "${words.joinToString { it.word }} : $score pts" + if (tiles.any { it.blank }) " (joker)" else ""
 
-/** Line under the board after the player's last move. */
+/**
+ * Line under the board after the player's last move: only the best possible score, not the word, which could
+ * still be played. The moves themselves are shown in the end-of-game analysis.
+ */
 @Composable
 fun LastMoveAnalysisText(analysis: MoveAnalysis, modifier: Modifier = Modifier) {
     val best = analysis.best.firstOrNull()
     val text = when {
         best == null -> "Ton coup : ${analysis.played} · aucun mot n'était possible"
         analysis.wasBest -> "Ton coup : ${analysis.played} · c'était le meilleur coup !"
-        else -> "Ton coup : ${analysis.played} · meilleur possible : ${best.mainWord} (${best.score}) ›"
+        else -> "Ton coup : ${analysis.played} · meilleur coup : ${best.score} points"
     }
     Text(text, modifier, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2)
 }
 
+/** The board before a move, with [tiles] (the move played or a better one) highlighted. */
 @Composable
-fun BestMovesDialog(analysis: MoveAnalysis, onDismiss: () -> Unit) {
+fun MoveOnBoardDialog(title: String, before: Board, tiles: List<Placement>, rules: RuleSet, onDismiss: () -> Unit) {
+    val placed = tiles.associateBy { it.row to it.col }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Meilleurs coups possibles") },
+        title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Avec ${analysis.move.rack?.replace('?', '★')} · tu as joué ${analysis.played}", style = MaterialTheme.typography.bodySmall)
-                analysis.best.forEachIndexed { i, c -> Text("${i + 1}. ${c.label()}") }
-                if (analysis.best.isEmpty()) Text("Aucun mot n'était possible.")
+            Column(Modifier.fillMaxWidth().aspectRatio(1f)) {
+                for (r in 0 until before.size) {
+                    Row(Modifier.weight(1f)) {
+                        for (c in 0 until before.size) {
+                            val tile = placed[r to c]
+                            val cell = before[r, c]
+                            val premium = rules.layout.premiumAt(r, c)
+                            val isCenter = r == rules.layout.center && c == rules.layout.center
+                            Square(
+                                letter = tile?.letter ?: cell.takeIf { it != Board.EMPTY }?.uppercaseChar(),
+                                points = when {
+                                    tile != null -> if (tile.blank) 0 else rules.points(tile.letter)
+                                    cell == Board.EMPTY || cell.isLowerCase() -> 0
+                                    else -> rules.points(cell)
+                                },
+                                background = when {
+                                    tile != null -> BoardColors.tentativeTile
+                                    cell != Board.EMPTY -> BoardColors.tile
+                                    isCenter && premium == Premium.NONE -> BoardColors.center
+                                    else -> BoardColors.premium(premium)
+                                },
+                                label = if (isCenter) "★" else BoardColors.label(premium),
+                                onClick = {},
+                                dragModifier = Modifier,
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(8.dp),
     )
 }
 
-/** Whole-game review: every move of the player against the 5 best possible ones. */
+/** Whole-game review: every move of the player against the 5 best possible ones, each shown on the board on a tap. */
 @Composable
 fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) {
     var analyses by remember(game.id) { mutableStateOf<List<MoveAnalysis>?>(null) }
+    var shown by remember { mutableStateOf<Triple<String, Board, List<Placement>>?>(null) }
+    val rules = RuleSet.byId(game.rulesId)
     LaunchedEffect(game.id) { analyses = analyse(game, lexicon, game.mySeat) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -124,6 +161,7 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) 
                                 " · ${list.count { it.wasBest }} meilleur(s) coup(s) sur ${list.size}",
                             fontWeight = FontWeight.Bold,
                         )
+                        Text("Touche un coup pour le voir sur le plateau.", style = MaterialTheme.typography.bodySmall)
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(list, key = { it.move.moveNumber }) { a ->
                                 Card(Modifier.fillMaxWidth()) {
@@ -132,9 +170,17 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) 
                                         Text(
                                             "Joué : ${a.played}" + if (a.wasBest) " ✓" else "",
                                             fontWeight = FontWeight.Bold,
-                                            modifier = if (a.wasBest) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp) else Modifier,
+                                            modifier = (if (a.wasBest) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp) else Modifier)
+                                                .then(if (a.move.tiles.isNotEmpty()) Modifier.clickable { shown = Triple("Joué : ${a.played}", a.before, a.move.tiles) } else Modifier),
                                         )
-                                        a.best.forEachIndexed { i, c -> Text("${i + 1}. ${c.label()}", style = MaterialTheme.typography.bodyMedium) }
+                                        a.best.forEachIndexed { i, c ->
+                                            Text(
+                                                "${i + 1}. ${c.label()} ›",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.fillMaxWidth().clickable { shown = Triple(c.label(), a.before, c.tiles) }.padding(vertical = 2.dp),
+                                            )
+                                        }
                                         if (a.best.isEmpty()) Text("Aucun mot n'était possible.", style = MaterialTheme.typography.bodyMedium)
                                     }
                                 }
@@ -145,4 +191,6 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) 
             }
         }
     }
+    shown?.let { (title, before, tiles) -> MoveOnBoardDialog(title, before, tiles, rules) { shown = null } }
 }
+

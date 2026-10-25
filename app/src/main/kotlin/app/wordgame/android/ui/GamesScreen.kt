@@ -10,16 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,7 +67,7 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
             solo.mapNotNull { store ->
                 store.summary()?.let {
                     GameSummary(
-                        store.bot.gameId, "${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
+                        store.bot.gameId, "$ROBOT_ICON ${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
                         if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
                     )
                 }
@@ -90,8 +86,8 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
         onOpen(bot.gameId)
     }
 
-    fun newGame(opponent: String, onCreated: (String) -> Unit) = viewModelScope.launch {
-        attempt { api.createGame(opponent) }
+    fun newGame(friends: List<String>, bots: List<String>, onCreated: (String) -> Unit) = viewModelScope.launch {
+        attempt { api.createGame(friends, bots) }
             .onSuccess { onCreated(it.id) }
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
@@ -132,18 +128,7 @@ fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenG
         }
     }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-                Button(onClick = { showNewGame = true }) { Text("Défier un ami") }
-                OutlinedButton(onClick = { vm.findRandomOpponent(onOpenGame) }) { Text("Adversaire au hasard") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { vm.playSolo(SoloBot.NONO, onOpenGame) }, modifier = Modifier.weight(1f)) {
-                    Text("Contre Nono-bot")
-                }
-                OutlinedButton(onClick = { vm.playSolo(SoloBot.BELZE, onOpenGame) }, modifier = Modifier.weight(1f)) {
-                    Text("Contre Belzé-bot")
-                }
-            }
+            Button(onClick = { showNewGame = true }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) { Text("Jouer") }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
 
             val (active, finished) = state.games.partition { it.status == GameStatus.ACTIVE }
@@ -157,21 +142,13 @@ fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenG
     }
 
     if (showNewGame) {
-        var opponent by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showNewGame = false },
-            title = { Text("Défier un ami") },
-            text = {
-                OutlinedTextField(opponent, { opponent = it.trim() }, label = { Text("Pseudo de ton ami") }, singleLine = true)
-            },
-            confirmButton = {
-                TextButton(enabled = opponent.length >= 3, onClick = {
-                    showNewGame = false
-                    vm.newGame(opponent, onOpenGame)
-                }) { Text("Lancer") }
-            },
-            dismissButton = { TextButton(onClick = { showNewGame = false }) { Text("Annuler") } },
-        )
+        NewGameDialog(onDismiss = { showNewGame = false }) { setup ->
+            when {
+                setup.random -> vm.findRandomOpponent(onOpenGame)
+                setup.solo -> vm.playSolo(setup.bots.single(), onOpenGame)
+                else -> vm.newGame(setup.friends, setup.bots.map { it.serverLevel }, onOpenGame)
+            }
+        }
     }
 }
 

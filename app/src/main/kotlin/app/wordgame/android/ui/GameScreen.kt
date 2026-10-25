@@ -84,7 +84,6 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     var confirmResign by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showUnseen by remember { mutableStateOf(false) }
-    var showBestMoves by remember { mutableStateOf(false) }
     var showAnalysis by remember { mutableStateOf(false) }
     var lexicon by remember { mutableStateOf<Lexicon?>(null) }
     LaunchedEffect(Unit) { lexicon = vm.lexicon() }
@@ -168,7 +167,6 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                 Box(
                     Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable {
                         if (state.message != null) vm.dismissMessage()
-                        else if (state.preview == null && state.lastMoveAnalysis != null) showBestMoves = true
                     },
                 ) {
                     val preview = state.preview
@@ -237,7 +235,6 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
             onDelete = { menuOpen = false; confirmDelete = true },
         )
     }
-    if (showBestMoves) state.lastMoveAnalysis?.let { BestMovesDialog(it, onDismiss = { showBestMoves = false }) }
     if (showAnalysis) {
         val g = state.game
         val lex = lexicon
@@ -265,21 +262,26 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
 
 private fun scoreLine(game: GameView): String {
     val me = game.players[game.mySeat]
-    val other = game.players[1 - game.mySeat]
-    return "${me.score} – ${other.score} ${other.nickname}"
+    val others = game.players.filterIndexed { i, _ -> i != game.mySeat }
+    others.singleOrNull()?.let { return "${me.score} – ${it.score} ${it.nickname}" }
+    // 3 or 4 players: my score, then each opponent's (eliminated ones crossed out).
+    return "${me.score} · " + others.joinToString(" · ") { "${it.nickname.take(8)}${if (it.eliminated) "✕" else ""} ${it.score}" }
 }
 
 private fun statusLine(game: GameView, state: GameUiState): String {
-    val opponent = game.players[1 - game.mySeat].nickname
+    val opponent = game.players[game.currentSeat].nickname
     val last = game.moves.lastOrNull()?.let { m ->
-        val who = if (m.seat == game.mySeat) "Toi" else game.players[m.seat].nickname
+        val mine = m.seat == game.mySeat
+        val who = if (mine) "Toi" else game.players[m.seat].nickname
+        // "Tu as passé" / "NonoBot a passé"
+        val subject = if (mine) "Tu as" else "$who a"
         val text = when (m.type) {
             MoveType.PLAY -> "$who : ${m.words.joinToString { it.word }} +${m.score}" +
                 (if (m.end == GameEnd.OUT) " (+${m.endAdjustments[m.seat]} de bonus de fin)" else "")
-            MoveType.EXCHANGE -> "$who a échangé ${m.exchangedCount} lettre(s)"
-            MoveType.PASS -> if (m.end == GameEnd.BLOCKED) "Partie bloquée" else "$who a passé"
-            MoveType.RESIGN -> "$who a abandonné"
-            MoveType.TIMEOUT -> "$who a dépassé le temps"
+            MoveType.EXCHANGE -> "$subject échangé ${m.exchangedCount} lettre(s)"
+            MoveType.PASS -> if (m.end == GameEnd.BLOCKED) "Partie bloquée" else "$subject passé"
+            MoveType.RESIGN -> "$subject abandonné"
+            MoveType.TIMEOUT -> "$subject dépassé le temps"
         }
         // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
         val deductions = m.endAdjustments.withIndex().filter { it.value < 0 }.joinToString { (seat, delta) ->
@@ -346,7 +348,7 @@ private fun BoardView(
 }
 
 @Composable
-private fun RowScope.Square(
+internal fun RowScope.Square(
     letter: Char?,
     points: Int,
     background: Color,

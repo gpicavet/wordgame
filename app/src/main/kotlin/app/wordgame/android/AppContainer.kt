@@ -86,10 +86,10 @@ class DictionaryLoader(private val context: Context) {
 
     private var expert: DoubleArray? = null
 
-    /** Belzé-bot's learned weights (models/value-v1.txt). */
+    /** BelzéBot's learned weights (models/value-v2.txt). */
     suspend fun expertWeights(): DoubleArray = mutex.withLock {
         expert ?: withContext(Dispatchers.IO) {
-            Afterstate.parseWeights(context.assets.open("value-v1.txt").bufferedReader().use { it.readText() })
+            Afterstate.parseWeights(context.assets.open("value-v2.txt").bufferedReader().use { it.readText() })
         }.also { expert = it }
     }
 
@@ -146,8 +146,8 @@ class ApiClient(private val session: Session) {
 
     suspend fun game(id: String): GameView = http.get("/api/v1/games/$id") { auth() }.result()
 
-    suspend fun createGame(opponent: String): GameView =
-        http.post("/api/v1/games") { auth(); json(CreateGameRequest(opponent)) }.result()
+    suspend fun createGame(friends: List<String>, bots: List<String>): GameView =
+        http.post("/api/v1/games") { auth(); json(CreateGameRequest(friends.singleOrNull()?.takeIf { bots.isEmpty() }, friends, bots)) }.result()
 
     suspend fun registerDevice(token: String) {
         http.post("/api/v1/devices") { auth(); json(DeviceRequest(token)) }.result<Unit>()

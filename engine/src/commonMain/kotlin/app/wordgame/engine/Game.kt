@@ -24,7 +24,12 @@ sealed interface Action {
 enum class GameStatus { ACTIVE, FINISHED }
 
 @Serializable
-data class PlayerState(val score: Int, val rack: String)
+data class PlayerState(
+    val score: Int,
+    val rack: String,
+    /** Resigned or timed out in a game of 3 or more: skipped, ranked last, rack back in the bag. */
+    val eliminated: Boolean = false,
+)
 
 /** Full, authoritative state. Contains the bag and every rack: never sent as is to a client. */
 @Serializable
@@ -42,6 +47,19 @@ data class GameState(
 ) {
     val rules get() = RuleSet.byId(rulesId)
     fun boardModel() = Board.fromRows(board)
+
+    /** Seats still playing. */
+    val activeSeats get() = players.indices.filter { !players[it].eliminated }
+
+    /** Next seat still playing after [seat]. */
+    fun nextSeat(seat: Int): Int {
+        var s = seat
+        do s = (s + 1) % players.size while (players[s].eliminated && s != seat)
+        return s
+    }
+
+    /** Best score among the other seats still playing (the one to catch up with or to stay ahead of). */
+    fun bestOpponentScore(seat: Int): Int = activeSeats.filter { it != seat }.maxOfOrNull { players[it].score } ?: 0
 }
 
 @Serializable
@@ -101,7 +119,7 @@ object Game {
 
     fun apply(state: GameState, seat: Int, action: Action, words: WordList, random: Random): MoveOutcome {
         if (state.status != GameStatus.ACTIVE) return MoveOutcome.Rejected(MoveError.GAME_FINISHED)
-        if (action is Action.Resign) return resign(state, seat, MoveType.RESIGN)
+        if (action is Action.Resign) return resign(state, seat, MoveType.RESIGN, random)
         if (seat != state.currentPlayer) return MoveOutcome.Rejected(MoveError.NOT_YOUR_TURN)
         val outcome = when (action) {
             is Action.Play -> play(state, seat, action.tiles, words)
@@ -112,16 +130,27 @@ object Game {
         return if (outcome is MoveOutcome.Applied) outcome.copy(record = outcome.record.copy(rack = state.players[seat].rack)) else outcome
     }
 
-    /** Resignation or turn timeout: the other player wins, whatever the score. */
-    fun resign(state: GameState, seat: Int, type: MoveType): MoveOutcome {
+    /**
+     * Resignation or turn timeout. With one opponent left, they win whatever the score. With more, the player is
+     * eliminated: their tiles go back to the bag and the others play on.
+     */
+    fun resign(state: GameState, seat: Int, type: MoveType, random: Random = Random): MoveOutcome {
         if (state.status != GameStatus.ACTIVE) return MoveOutcome.Rejected(MoveError.GAME_FINISHED)
-        val others = state.players.indices.filter { it != seat }
-        val finished = state.copy(
-            status = GameStatus.FINISHED,
+        if (state.players[seat].eliminated) return MoveOutcome.Rejected(MoveError.NOT_YOUR_TURN)
+        val others = state.activeSeats.filter { it != seat }
+        val record = MoveRecord(seat, type, rack = state.players[seat].rack)
+        if (others.size == 1) {
+            val finished = state.copy(status = GameStatus.FINISHED, moveNumber = state.moveNumber + 1, winner = others.single())
+            return MoveOutcome.Applied(finished, record)
+        }
+        val players = state.players.toMutableList()
+        players[seat] = players[seat].copy(rack = "", eliminated = true)
+        val next = state.copy(
+            bag = (state.bag + state.players[seat].rack).toList().shuffled(random).joinToString(""),
+            players = players,
             moveNumber = state.moveNumber + 1,
-            winner = others.singleOrNull() ?: others.maxBy { state.players[it].score },
         )
-        return MoveOutcome.Applied(finished, MoveRecord(seat, type))
+        return MoveOutcome.Applied(if (seat == state.currentPlayer) next.copy(currentPlayer = next.nextSeat(seat)) else next, record)
     }
 
     private fun play(state: GameState, seat: Int, tiles: List<Placement>, words: WordList): MoveOutcome {
@@ -149,7 +178,7 @@ object Game {
             board = board.with(tiles).toRows(),
             bag = state.bag.dropLast(drawn.length),
             players = players,
-            currentPlayer = (seat + 1) % players.size,
+            currentPlayer = state.nextSeat(seat),
             moveNumber = state.moveNumber + 1,
             scorelessTurns = 0,
         )
@@ -181,14 +210,14 @@ object Game {
     private fun scoreless(state: GameState, record: MoveRecord, players: List<PlayerState>): MoveOutcome {
         val next = state.copy(
             players = players,
-            currentPlayer = (record.seat + 1) % players.size,
+            currentPlayer = state.nextSeat(record.seat),
             moveNumber = state.moveNumber + 1,
             scorelessTurns = state.scorelessTurns + 1,
         )
         val rules = state.rules
         // With fewer tiles than a rack, nobody can exchange: a full round of passes means nobody can play.
         // (Exchanges are impossible then and plays reset the counter, so these turns were all passes.)
-        val blocked = next.bag.length < rules.rackSize && next.scorelessTurns >= players.size
+        val blocked = next.bag.length < rules.rackSize && next.scorelessTurns >= state.activeSeats.size
         val tooLong = next.scorelessTurns >= rules.maxScorelessTurns
         if (!blocked && !tooLong) return MoveOutcome.Applied(next, record)
         // Everybody loses the value of the tiles left on their rack.
@@ -212,9 +241,11 @@ object Game {
         return finish(state.copy(players = players))
     }
 
+    /** Highest score among the seats still playing wins; eliminated players cannot. */
     private fun finish(state: GameState): GameState {
-        val best = state.players.maxOf { it.score }
-        val leaders = state.players.indices.filter { state.players[it].score == best }
+        val active = state.activeSeats
+        val best = active.maxOf { state.players[it].score }
+        val leaders = active.filter { state.players[it].score == best }
         return state.copy(status = GameStatus.FINISHED, winner = leaders.singleOrNull())
     }
 

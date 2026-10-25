@@ -273,6 +273,29 @@ class EndOfGameTest {
         assertIs<MoveOutcome.Applied>(outcome)
         assertEquals(GameEnd.SCORELESS, outcome.record.end)
     }
+
+    @Test
+    fun resigningInAThreePlayerGameEliminatesThePlayer() {
+        val state = Game.new(rules, 3, Random(1))
+        val bag = state.bag.length
+        val rack = state.players[0].rack
+        val after = (Game.apply(state, 0, Action.Resign, anyWord, Random(2)) as MoveOutcome.Applied).state
+        assertEquals(GameStatus.ACTIVE, after.status)
+        assertTrue(after.players[0].eliminated)
+        assertEquals("", after.players[0].rack)
+        assertEquals(bag + rack.length, after.bag.length)
+        assertEquals(1, after.currentPlayer)
+        // Turns skip the eliminated seat.
+        val s2 = (Game.apply(after, 1, Action.Pass, anyWord, Random(3)) as MoveOutcome.Applied).state
+        assertEquals(2, s2.currentPlayer)
+        val s3 = (Game.apply(s2, 2, Action.Pass, anyWord, Random(3)) as MoveOutcome.Applied).state
+        assertEquals(1, s3.currentPlayer)
+        // The last opponent standing wins, even with fewer points.
+        val ahead = s3.copy(players = s3.players.mapIndexed { i, p -> if (i == 2) p.copy(score = 50) else p })
+        val end = (Game.apply(ahead, 2, Action.Resign, anyWord, Random(4)) as MoveOutcome.Applied).state
+        assertEquals(GameStatus.FINISHED, end.status)
+        assertEquals(1, end.winner)
+    }
 }
 
 class ExtraWordsTest {

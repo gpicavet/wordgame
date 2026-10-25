@@ -27,8 +27,16 @@ data class Me(val userId: String, val nickname: String)
 @Serializable
 data class DeviceRequest(val token: String)
 
+/**
+ * A game with friends (by nickname) and robots (by level: "nono", "belze"), 2 to 4 players with the caller.
+ * [opponentNickname] is the single friend of older app versions.
+ */
 @Serializable
-data class CreateGameRequest(val opponentNickname: String)
+data class CreateGameRequest(
+    val opponentNickname: String? = null,
+    val friends: List<String> = emptyList(),
+    val bots: List<String> = emptyList(),
+)
 
 @Serializable
 data class MatchmakingResponse(val gameId: String?)
@@ -37,7 +45,14 @@ data class MatchmakingResponse(val gameId: String?)
 data class MoveRequest(val expectedMoveNumber: Int, val action: Action)
 
 @Serializable
-data class PlayerView(val nickname: String, val score: Int, val rackCount: Int)
+data class PlayerView(
+    val nickname: String,
+    val score: Int,
+    val rackCount: Int,
+    /** Resigned or timed out in a game of 3 or more. */
+    val eliminated: Boolean = false,
+    val bot: Boolean = false,
+)
 
 @Serializable
 data class MoveView(
@@ -78,8 +93,10 @@ data class GameView(
 @Serializable
 data class GameSummary(
     val id: String,
+    /** The other players' nicknames, comma-separated. */
     val opponent: String,
     val myScore: Int,
+    /** Best score among the other players. */
     val opponentScore: Int,
     val myTurn: Boolean,
     val status: GameStatus,

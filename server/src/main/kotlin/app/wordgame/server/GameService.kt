@@ -1,5 +1,6 @@
 package app.wordgame.server
 
+import app.wordgame.engine.Action
 import app.wordgame.engine.Game
 import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameState
@@ -12,6 +13,7 @@ import app.wordgame.engine.WordList
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.BestMove
+import app.wordgame.protocol.CreateGameRequest
 import app.wordgame.protocol.FinishedGame
 import app.wordgame.protocol.GameResult
 import app.wordgame.protocol.OpponentRecord
@@ -50,9 +52,19 @@ class GameService(
     private val now: () -> Long = System::currentTimeMillis,
     private val random: Random = SecureRandom().asKotlinRandom(),
     private val notifier: Notifier = NoNotifier,
+    private val bots: List<ServerBot> = emptyList(),
 ) {
-    private class Seat(val userId: String, val nickname: String)
-    private class StoredGame(val id: String, val state: GameState, val deadline: Long, val seats: List<Seat>)
+    private val botsById = bots.associateBy { it.userId }
+
+    private inner class Seat(val userId: String, val nickname: String) {
+        val bot get() = botsById[userId]
+    }
+
+    private inner class StoredGame(val id: String, val state: GameState, val deadline: Long, val seats: List<Seat>) {
+        /** The other players' nicknames and best score, from [seat]'s side. */
+        fun opponents(seat: Int) = seats.indices.filter { it != seat }.joinToString(", ") { seats[it].nickname }
+        fun bestOpponentScore(seat: Int) = state.players.indices.filter { it != seat }.maxOf { state.players[it].score }
+    }
 
     suspend fun register(nickname: String): AuthResponse {
         if (!NICKNAME.matches(nickname)) {
@@ -82,12 +94,11 @@ class GameService(
         ids.map { id ->
             val game = load(id)
             val seat = game.seatOf(user)
-            val opponent = 1 - seat
             GameSummary(
                 id = id,
-                opponent = game.seats[opponent].nickname,
+                opponent = game.opponents(seat),
                 myScore = game.state.players[seat].score,
-                opponentScore = game.state.players[opponent].score,
+                opponentScore = game.bestOpponentScore(seat),
                 myTurn = game.state.status == GameStatus.ACTIVE && game.state.currentPlayer == seat,
                 status = game.state.status,
                 won = game.state.winner?.let { it == seat },
@@ -105,7 +116,7 @@ class GameService(
         for (id in ids) {
             val game = load(id)
             val seat = game.seatOf(user)
-            val opponent = game.seats[1 - seat].nickname
+            val opponent = game.opponents(seat)
             val state = game.state
             query("SELECT record, played_at FROM moves WHERE game_id = ?", id) {
                 ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)) to it.getLong(2)
@@ -119,7 +130,7 @@ class GameService(
                 gameId = id,
                 opponent = opponent,
                 myScore = state.players[seat].score,
-                opponentScore = state.players[1 - seat].score,
+                opponentScore = game.bestOpponentScore(seat),
                 result = when (state.winner) {
                     seat -> GameResult.WIN
                     null -> GameResult.DRAW
@@ -157,16 +168,37 @@ class GameService(
         )
     }
 
-    suspend fun createGame(user: User, opponentNickname: String): GameView = db.tx {
-        val opponent = query("SELECT id, nickname FROM users WHERE nickname = ?", opponentNickname) {
-            User(it.getString(1), it.getString(2))
-        }.firstOrNull() ?: throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_PLAYER", "Joueur introuvable")
-        if (opponent.id == user.id) throw ApiException(HttpStatusCode.BadRequest, "SELF_GAME", "Impossible de jouer contre soi-même")
+    /** A game with friends (each at most once) and robots (the same one possibly twice): 2 to 4 players with the caller. */
+    suspend fun createGame(user: User, request: CreateGameRequest): GameView = db.tx {
+        val names = request.friends.ifEmpty { listOfNotNull(request.opponentNickname) }
+        if (names.isEmpty() && request.bots.isEmpty()) throw ApiException(HttpStatusCode.BadRequest, "NO_OPPONENT", "Choisis au moins un adversaire")
+        if (names.size + request.bots.size > 3) throw ApiException(HttpStatusCode.BadRequest, "TOO_MANY_PLAYERS", "4 joueurs au plus")
+        val friends = names.map { name ->
+            query("SELECT id, nickname FROM users WHERE nickname = ?", name) { User(it.getString(1), it.getString(2)) }
+                .firstOrNull()?.takeIf { it.id !in botsById }
+                ?: throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_PLAYER", "Joueur introuvable : $name")
+        }
+        if (friends.any { it.id == user.id }) throw ApiException(HttpStatusCode.BadRequest, "SELF_GAME", "Impossible de jouer contre soi-même")
+        if (friends.map { it.id }.toSet().size < friends.size) {
+            throw ApiException(HttpStatusCode.BadRequest, "DUPLICATE_PLAYER", "Chaque joueur ne peut être choisi qu'une fois")
+        }
+        val robots = request.bots.map { level ->
+            val bot = bots.firstOrNull { it.level == level }
+                ?: throw ApiException(HttpStatusCode.BadRequest, "UNKNOWN_BOT", "Robot inconnu : $level")
+            update(
+                "INSERT OR IGNORE INTO users(id, nickname, token_hash, created_at) VALUES (?, ?, ?, ?)",
+                bot.userId, bot.nickname, "bot:${bot.userId}", now(),
+            )
+            User(bot.userId, bot.nickname)
+        }
         checkActiveGameLimit(user)
-        checkActiveGameLimit(opponent)
-        val id = insertGame(listOf(user, opponent))
+        friends.forEach { checkActiveGameLimit(it) }
+        val id = insertGame(listOf(user) + friends + robots)
+        val botMoves = playBots(load(id))
         val game = load(id)
-        view(game, user) to listOf(challenge(game, opponent, "Nouveau défi", "${user.nickname} te défie"))
+        val others = if (friends.size + robots.size > 1) " (avec ${(friends + robots).joinToString { it.nickname }})" else ""
+        val invitations = friends.map { challenge(game, it, "Nouveau défi", "${user.nickname} te défie$others") }
+        view(game, user) to invitations + botMoves.filter { n -> n.userId != user.id && friends.none { it.id == n.userId } }
     }.let { (view, notifications) -> notifier.send(notifications); view }
 
     /** Pairs with the oldest waiting player, or queues the caller. */
@@ -199,8 +231,9 @@ class GameService(
         val seatsThatPlayed = query("SELECT record FROM moves WHERE game_id = ?", gameId) {
             ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)).seat
         }.toSet()
-        if (seatsThatPlayed.size >= game.seats.size) {
-            throw ApiException(HttpStatusCode.Conflict, "GAME_STARTED", "Les deux joueurs ont déjà joué")
+        val humans = game.seats.indices.filter { game.seats[it].bot == null }
+        if (humans.all { it in seatsThatPlayed }) {
+            throw ApiException(HttpStatusCode.Conflict, "GAME_STARTED", "Tous les joueurs ont déjà joué")
         }
         update("DELETE FROM moves WHERE game_id = ?", gameId)
         update("DELETE FROM game_players WHERE game_id = ?", gameId)
@@ -221,7 +254,7 @@ class GameService(
             )
             is MoveOutcome.Applied -> {
                 save(game.id, outcome.state, outcome.record)
-                afterMove(game, outcome.state, outcome.record)
+                afterMove(game, outcome.state, outcome.record) + playBots(load(gameId))
             }
         }
         view(load(gameId), user) to notifications
@@ -232,10 +265,10 @@ class GameService(
         val expired = query("SELECT id FROM games WHERE status = 'ACTIVE' AND deadline < ?", now()) { it.getString(1) }
         for (id in expired) {
             val state = load(id).state
-            val outcome = Game.resign(state, state.currentPlayer, MoveType.TIMEOUT)
+            val outcome = Game.resign(state, state.currentPlayer, MoveType.TIMEOUT, random)
             if (outcome is MoveOutcome.Applied) {
                 save(id, outcome.state, outcome.record)
-                notifier.send(afterMove(load(id), outcome.state, outcome.record))
+                notifier.send(afterMove(load(id), outcome.state, outcome.record) + playBots(load(id)))
             }
         }
         expired.size
@@ -251,6 +284,27 @@ class GameService(
                 token, user.id, now(),
             )
         }
+    }
+
+    /** Plays the robots' turns until a human is to play or the game is over; returns what to tell the humans. */
+    private fun Connection.playBots(start: StoredGame): List<Notification> {
+        var game = start
+        val notifications = ArrayList<Notification>()
+        while (game.state.status == GameStatus.ACTIVE) {
+            val seat = game.state.currentPlayer
+            val bot = game.seats[seat].bot ?: break
+            val history = query("SELECT record FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
+                ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1))
+            }
+            val outcome = Game.apply(game.state, seat, bot.play(game.state, seat, history), words, random)
+                .let { if (it is MoveOutcome.Applied) it else Game.apply(game.state, seat, Action.Pass, words, random) }
+            check(outcome is MoveOutcome.Applied) { "Bot move rejected: $outcome" }
+            save(game.id, outcome.state, outcome.record)
+            notifications += afterMove(game, outcome.state, outcome.record)
+            game = load(game.id)
+        }
+        // Only the latest news matters to each human.
+        return notifications.reversed().distinctBy { it.userId }.reversed()
     }
 
     private fun challenge(game: StoredGame, to: User, title: String, body: String): Notification {
@@ -271,13 +325,19 @@ class GameService(
         }
         if (state.status == GameStatus.ACTIVE) {
             val next = game.seats[state.currentPlayer]
-            return listOf(Notification(next.userId, "À toi de jouer", what, game.id))
+            return if (next.bot != null) emptyList() else listOf(Notification(next.userId, "À toi de jouer", what, game.id))
         }
         return game.seats.indices.mapNotNull { seat ->
             val player = game.seats[seat]
+            if (player.bot != null) return@mapNotNull null
             if (seat == record.seat && record.type != MoveType.TIMEOUT) return@mapNotNull null
-            val opponent = game.seats[1 - seat].nickname
-            val score = "${state.players[seat].score} – ${state.players[1 - seat].score}"
+            val opponent = game.opponents(seat)
+            val score = if (game.seats.size == 2) {
+                "${state.players[seat].score} – ${state.players[1 - seat].score}"
+            } else {
+                game.seats.indices.sortedByDescending { state.players[it].score }
+                    .joinToString(", ") { "${game.seats[it].nickname} ${state.players[it].score}" }
+            }
             val result = when (state.winner) {
                 seat -> "Victoire contre $opponent"
                 null -> "Égalité avec $opponent"
@@ -321,7 +381,12 @@ class GameService(
         val seats = query(
             "SELECT u.id, u.nickname FROM game_players p JOIN users u ON u.id = p.user_id WHERE p.game_id = ? ORDER BY p.seat",
             id,
-        ) { Seat(it.getString(1), it.getString(2)) }
+        ) { it.getString(1) to it.getString(2) }
+            // The same robot twice: "NonoBot 1" and "NonoBot 2".
+            .let { rows -> rows.mapIndexed { i, (userId, nickname) ->
+                val twins = rows.filter { it.first == userId }
+                Seat(userId, if (twins.size > 1) "$nickname ${rows.take(i + 1).count { it.first == userId }}" else nickname)
+            } }
         return StoredGame(id, ApiJson.decodeFromString(GameState.serializer(), row.first), row.second, seats)
     }
 
@@ -343,7 +408,9 @@ class GameService(
             board = state.board,
             rack = state.players[seat].rack,
             bagCount = state.bag.length,
-            players = state.players.mapIndexed { i, p -> PlayerView(game.seats[i].nickname, p.score, p.rack.length) },
+            players = state.players.mapIndexed { i, p ->
+                PlayerView(game.seats[i].nickname, p.score, p.rack.length, p.eliminated, game.seats[i].bot != null)
+            },
             mySeat = seat,
             currentSeat = state.currentPlayer,
             moveNumber = state.moveNumber,

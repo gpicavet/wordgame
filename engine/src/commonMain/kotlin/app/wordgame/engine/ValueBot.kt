@@ -99,16 +99,15 @@ class ValueBot(
         return v
     }
 
-    fun decide(state: GameState, seat: Int): Decision {
+    /** [allowBingo] false: never plays all the tiles of a full rack (see [bingoAllowed]). */
+    fun decide(state: GameState, seat: Int, allowBingo: Boolean = true): Decision {
         val rules = state.rules
         val rack = state.players[seat].rack
         val board = state.boardModel()
-        val candidates = if (vocabulary == null) {
-            Solver(lexicon, rules).bestMoves(board, rack, topK)
-        } else {
-            Solver(lexicon, rules).bestMoves(board, rack, Int.MAX_VALUE)
-                .filter { c -> c.words.all { vocabulary.contains(it.word) } }.take(topK)
-        }
+        val candidates = Solver(lexicon, rules).bestMoves(board, rack, Int.MAX_VALUE)
+            .filter { c -> vocabulary == null || c.words.all { vocabulary.contains(it.word) } }
+            .filter { c -> allowBingo || c.tiles.size < rules.rackSize }
+            .take(topK)
         if (candidates.isEmpty()) {
             if (state.bag.length < rules.rackSize) return Decision(Action.Pass, 0, null)
             // Keep the blank and an S, swap the rest.
@@ -125,4 +124,21 @@ class ValueBot(
         val chosen = if (epsilon > 0 && random.nextDouble() < epsilon) scored.take(5).random(random) else scored.maxBy { it.third }
         return Decision(Action.Play(chosen.first.tiles), chosen.first.score, chosen.second)
     }
+}
+
+/**
+ * Whether a bot in [seat] may play a scrabble this turn: with probability 2/3 when it trailed by more than
+ * [margin] points (behind the best opponent) at the start of its previous turn and still does now, 1/5 otherwise.
+ */
+fun bingoAllowed(moves: List<MoveRecord>, seat: Int, random: Random, margin: Int = 30): Boolean {
+    val scores = HashMap<Int, Int>()
+    fun deficit() = (scores.filterKeys { it != seat }.values.maxOrNull() ?: 0) - (scores[seat] ?: 0)
+    val deficits = ArrayList<Int>() // at the start of each of the bot's turns
+    for (m in moves) {
+        if (m.seat == seat) deficits += deficit()
+        scores[m.seat] = (scores[m.seat] ?: 0) + m.score
+    }
+    deficits += deficit()
+    val trailing = deficits.size >= 2 && deficits.takeLast(2).all { it > margin }
+    return random.nextDouble() < if (trailing) 2.0 / 3 else 0.2
 }

@@ -1,7 +1,9 @@
 package app.wordgame.server
 
+import app.wordgame.engine.Afterstate
 import app.wordgame.engine.Dawg
 import app.wordgame.engine.ExtraWords
+import app.wordgame.engine.Lexicon
 import app.wordgame.engine.plus
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
@@ -40,6 +42,8 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 import java.io.File
+import java.security.SecureRandom
+import kotlin.random.asKotlinRandom
 import kotlin.time.Duration.Companion.minutes
 
 private val log = LoggerFactory.getLogger("wordgame")
@@ -60,7 +64,17 @@ fun main() {
     // Push notifications are optional: without credentials the game works, players just are not notified.
     val notifier = env["WORDGAME_FCM_CREDENTIALS"]?.let(::File)?.takeIf { it.exists() }
         ?.let { FcmNotifier(it, db) } ?: NoNotifier.also { log.info("Push notifications disabled (no WORDGAME_FCM_CREDENTIALS)") }
-    val service = GameService(db, dictionary, notifier = notifier)
+    // Robots for games with friends: they need the everyday vocabulary and BelzéBot's weights.
+    val commonPath = env["WORDGAME_COMMON_DICT"] ?: "dictionaries/bin/fr-courant.dawg"
+    val weightsPath = env["WORDGAME_BOT_WEIGHTS"] ?: "models/value-v2.txt"
+    val bots = if (File(commonPath).exists() && File(weightsPath).exists()) {
+        val weights = Afterstate.parseWeights(File(weightsPath).readText())
+        serverBots(Lexicon(dawg, extra), Dawg.fromBytes(File(commonPath).readBytes()), weights, SecureRandom().asKotlinRandom())
+    } else {
+        emptyList()
+    }
+    log.info("Robots: {}", bots.joinToString { it.nickname }.ifEmpty { "none (missing $commonPath or $weightsPath)" })
+    val service = GameService(db, dictionary, notifier = notifier, bots = bots)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
 
     embeddedServer(
@@ -122,7 +136,7 @@ fun Application.wordgame(service: GameService) {
                     call.respond(HttpStatusCode.NoContent)
                 }
                 post("/games") {
-                    call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>().opponentNickname))
+                    call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>()))
                 }
                 get("/games/{id}") { call.respond(service.view(call.user(), call.parameters["id"]!!)) }
                 delete("/games/{id}") {

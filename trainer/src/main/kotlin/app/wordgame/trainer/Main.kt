@@ -9,10 +9,15 @@ import app.wordgame.engine.Game
 import app.wordgame.engine.GameState
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.Lexicon
+import app.wordgame.engine.Mlp
 import app.wordgame.engine.MoveOutcome
+import app.wordgame.engine.MoveRecord
 import app.wordgame.engine.MoveType
+import app.wordgame.engine.NeuralBot
+import app.wordgame.engine.RawAfterstate
 import app.wordgame.engine.RuleSet
 import app.wordgame.engine.ValueBot
+import app.wordgame.engine.bingoAllowed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -31,7 +36,8 @@ private val rules = RuleSet.CLASSIC
 private val lexicon = Lexicon(Dawg.fromBytes(File("dictionaries/bin/fr-libre.dawg").readBytes()))
 private val common = Dawg.fromBytes(File("dictionaries/bin/fr-courant.dawg").readBytes())
 
-private typealias Player = (GameState, Int) -> Decision
+/** Chooses a move from the state, the seat and the moves played so far. */
+private typealias Player = (GameState, Int, List<MoveRecord>) -> Decision
 
 /** Training sample: afterstate features and the score difference that followed it. */
 private class Sample(val x: DoubleArray, val target: Double)
@@ -45,12 +51,14 @@ private fun play(players: List<Player>, random: Random, record: Boolean): Result
     val trace = ArrayList<Triple<Int, DoubleArray, Int>>()
     var turns = 0
     val bingos = IntArray(2)
+    val history = ArrayList<MoveRecord>()
     while (state.status == GameStatus.ACTIVE && turns < 200) {
         val seat = state.currentPlayer
-        val d = players[seat](state, seat)
+        val d = players[seat](state, seat, history)
         val outcome = Game.apply(state, seat, d.action, lexicon.words, random)
         check(outcome is MoveOutcome.Applied) { "rejected: $outcome" }
         state = outcome.state
+        history += outcome.record
         if (outcome.record.tiles.size == rules.rackSize) bingos[seat]++
         if (record && d.features != null) trace += Triple(seat, d.features!!, diff(state, seat))
         turns++
@@ -63,22 +71,29 @@ private fun diff(state: GameState, seat: Int) = state.players[seat].score - stat
 
 private fun greedy(random: Random): Player {
     val bot = ValueBot(lexicon, DoubleArray(Afterstate.size), random)
-    return { s, seat -> bot.decide(s, seat) }
+    return { s, seat, _ -> bot.decide(s, seat) }
 }
 
-private fun valueBot(weights: DoubleArray, random: Random, epsilon: Double = 0.0): Player {
+/** [heldBack]: scrabbles only played sometimes, as by Belzé-bot in the app (see [bingoAllowed]). */
+private fun valueBot(weights: DoubleArray, random: Random, epsilon: Double = 0.0, heldBack: Boolean = false): Player {
     val bot = ValueBot(lexicon, weights, random, epsilon = epsilon, vocabulary = common)
-    return { s, seat -> bot.decide(s, seat) }
+    return { s, seat, history -> bot.decide(s, seat, !heldBack || bingoAllowed(history, seat, random)) }
+}
+
+/** Belzé-bot as in the app: learned weights, common vocabulary, scrabbles held back. */
+private fun belze(weights: DoubleArray, random: Random): Player {
+    val bot = ValueBot(lexicon, weights, random, vocabulary = common)
+    return { s, seat, history -> bot.decide(s, seat, bingoAllowed(history, seat, random)) }
 }
 
 private fun greedyCommon(random: Random): Player {
     val bot = ValueBot(lexicon, DoubleArray(Afterstate.size), random, vocabulary = common)
-    return { s, seat -> bot.decide(s, seat) }
+    return { s, seat, _ -> bot.decide(s, seat) }
 }
 
 private fun beginner(random: Random): Player {
     val bot = BeginnerBot(lexicon, common, random)
-    return { s, seat -> Decision(bot.play(s, seat), 0, null) }
+    return { s, seat, _ -> Decision(bot.play(s, seat), 0, null) }
 }
 
 /** Plays [games] games between a and b (alternating who starts), in parallel; prints a's average margin. */
@@ -112,7 +127,7 @@ private fun train(games: Int, out: File) = runBlocking(Dispatchers.Default) {
         val results = (0 until batch).map { i ->
             async {
                 val random = Random(played + i.toLong())
-                play(listOf(valueBot(snapshot, random, 0.05), valueBot(snapshot, random, 0.05)), random, record = true)
+                play(listOf(valueBot(snapshot, random, 0.05, heldBack = true), valueBot(snapshot, random, 0.05, heldBack = true)), random, record = true)
             }
         }.awaitAll()
         val lr = if (played < games / 2) 0.02 else 0.005
@@ -134,6 +149,53 @@ private fun train(games: Int, out: File) = runBlocking(Dispatchers.Default) {
     save(w, out)
 }
 
+private fun neural(net: Mlp, random: Random, epsilon: Double = 0.0): Player {
+    val bot = NeuralBot(lexicon, net, random, epsilon = epsilon, vocabulary = common)
+    return { s, seat, history -> bot.decide(s, seat, bingoAllowed(history, seat, random)) }
+}
+
+/**
+ * Same self-play Monte Carlo loop as [train], with the network of [NeuralBot]: each lot of games is played
+ * with a frozen copy, then the network takes Adam steps on the new afterstates (each under a random symmetry).
+ * The error on those afterstates is measured before training on them, split between midgame and endgame.
+ */
+private fun trainNet(games: Int, out: File, resume: File?) = runBlocking(Dispatchers.Default) {
+    val net = resume?.let { Mlp.fromBytes(it.readBytes()) } ?: Mlp.random(intArrayOf(RawAfterstate.SIZE, 128, 64, 1), 50.0, Random(42))
+    val trainer = AdamTrainer(net)
+    val random = Random(7)
+    val lot = Runtime.getRuntime().availableProcessors()
+    var played = 0
+    val err = DoubleArray(4) // midgame sum, count, endgame sum, count
+    var trainErr = 0.0
+    var lots = 0
+    val start = System.currentTimeMillis()
+    while (played < games) {
+        val snapshot = net.copy()
+        val results = (0 until lot).map { i ->
+            async {
+                val r = Random(1_000_000_000L + played + i)
+                play(listOf(neural(snapshot, r, 0.05), neural(snapshot, r, 0.05)), r, record = true)
+            }
+        }.awaitAll()
+        val samples = results.flatMap { it.samples }
+        for (s in samples) {
+            val k = if (isEndgame(s.x)) 2 else 0
+            err[k] += kotlin.math.abs(snapshot.evaluate(s.x) - s.target); err[k + 1]++
+        }
+        trainer.learningRate = if (played < games * 2 / 3) 1e-3 else 3e-4
+        trainErr += trainOn(trainer, samples.map { it.x }, samples.map { it.target }, random)
+        lots++
+        played += lot
+        if (lots % 50 == 0 || played >= games) {
+            println("%7d parties · erreur %.1f pts (milieu %.1f, fin %.1f) · %.0f s".format(
+                played, trainErr / lots, err[0] / err[1], err[2] / err[3], (System.currentTimeMillis() - start) / 1000.0))
+            err.fill(0.0); trainErr = 0.0; lots = 0
+            out.parentFile?.mkdirs()
+            out.writeBytes(net.toBytes())
+        }
+    }
+}
+
 private fun save(w: DoubleArray, out: File) {
     out.parentFile?.mkdirs()
     out.writeText(Afterstate.names().zip(w.toList()).joinToString("\n") { (n, v) -> "$n=$v" } + "\n")
@@ -147,13 +209,15 @@ private fun show(names: List<String>, players: List<Player>, seed: Long) {
     var state = Game.new(rules, 2, random)
     println("=== ${names[0]} contre ${names[1]} (graine $seed) ===")
     var turn = 1
+    val history = ArrayList<MoveRecord>()
     while (state.status == GameStatus.ACTIVE && turn < 200) {
         val seat = state.currentPlayer
         val rack = state.players[seat].rack
-        val outcome = Game.apply(state, seat, players[seat](state, seat).action, lexicon.words, random)
+        val outcome = Game.apply(state, seat, players[seat](state, seat, history).action, lexicon.words, random)
         check(outcome is MoveOutcome.Applied) { "rejected: $outcome" }
         state = outcome.state
         val m = outcome.record
+        history += m
         val what = when (m.type) {
             MoveType.PLAY -> {
                 val first = m.tiles.minWith(compareBy({ it.row }, { it.col }))
@@ -191,14 +255,24 @@ fun main(args: Array<String>) {
             val n = args.getOrElse(2) { "1000" }.toInt()
             match("Bot entraîné contre glouton (même vocabulaire courant)", n, { r -> valueBot(w, r) }, ::greedyCommon)
             match("Bot entraîné contre Nono-bot débutant", n, { r -> valueBot(w, r) }, ::beginner)
+            match("Belzé-bot (scrabbles freinés) contre Nono-bot débutant", n, { r -> belze(w, r) }, ::beginner)
+            match("Belzé-bot (scrabbles freinés) contre glouton", n, { r -> belze(w, r) }, ::greedyCommon)
         }
         "show" -> {
             val w = load(File(args[1]))
             val seed = args.getOrElse(2) { "1" }.toLong()
             val r = Random(seed)
-            show(listOf("Belzé", "Nono"), listOf(valueBot(w, r), beginner(r)), seed)
-            show(listOf("Belzé-1", "Belzé-2"), listOf(valueBot(w, r), valueBot(w, r)), seed + 1)
+            show(listOf("Belzé", "Nono"), listOf(belze(w, r), beginner(r)), seed)
+            show(listOf("Belzé-1", "Belzé-2"), listOf(belze(w, r), belze(w, r)), seed + 1)
         }
-        else -> println("usage: baseline [games] | train <games> <out> | eval <weights> [games]")
+        "trainnet" -> trainNet(args[1].toInt(), File(args[2]), args.getOrNull(3)?.let(::File))
+        "evalnet" -> {
+            val net = Mlp.fromBytes(File(args[1]).readBytes())
+            val w = load(File(args.getOrElse(3) { "models/value-v2.txt" }))
+            val n = args.getOrElse(2) { "400" }.toInt()
+            match("Réseau contre Belzé-bot", n, { r -> neural(net, r) }, { r -> belze(w, r) })
+            match("Réseau contre Nono-bot débutant", n, { r -> neural(net, r) }, ::beginner)
+        }
+        else -> println("usage: baseline [games] | train <games> <out> | eval <weights> [games] | trainnet <games> <out.bin> [resume.bin] | evalnet <net.bin> [games] [belze weights]")
     }
 }
