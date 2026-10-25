@@ -39,8 +39,11 @@ private val common = Dawg.fromBytes(File("dictionaries/bin/fr-courant.dawg").rea
 /** Chooses a move from the state, the seat and the moves played so far. */
 private typealias Player = (GameState, Int, List<MoveRecord>) -> Decision
 
-/** Training sample: afterstate features and the score difference that followed it. */
-private class Sample(val x: DoubleArray, val target: Double)
+/**
+ * Training sample: afterstate features and the score difference that followed it until the end ([target]),
+ * with the seat that played and the score difference right after its move ([after]), for TD(λ).
+ */
+private class Sample(val x: DoubleArray, val target: Double, val seat: Int = 0, val after: Int = 0)
 
 private class Result(val scores: List<Int>, val samples: List<Sample>, val bingos: List<Int>)
 
@@ -63,7 +66,7 @@ private fun play(players: List<Player>, random: Random, record: Boolean): Result
         if (record && d.features != null) trace += Triple(seat, d.features!!, diff(state, seat))
         turns++
     }
-    val samples = trace.map { (seat, x, after) -> Sample(x, (diff(state, seat) - after).toDouble()) }
+    val samples = trace.map { (seat, x, after) -> Sample(x, (diff(state, seat) - after).toDouble(), seat, after) }
     return Result(state.players.map { it.score }, samples, bingos.toList())
 }
 
@@ -159,7 +162,30 @@ private fun neural(net: Mlp, random: Random, epsilon: Double = 0.0): Player {
  * with a frozen copy, then the network takes Adam steps on the new afterstates (each under a random symmetry).
  * The error on those afterstates is measured before training on them, split between midgame and endgame.
  */
-private fun trainNet(games: Int, out: File, resume: File?) = runBlocking(Dispatchers.Default) {
+/**
+ * λ-returns of one game (TD(λ)): for each seat, in move order, the target of an afterstate mixes what the
+ * next one of that seat is worth for [net] with what actually followed; λ = 1 is the Monte Carlo target.
+ *   G(t) = Δ(t→t+1) + (1 − λ)·V(t+1) + λ·G(t+1), and G(last) = final difference − difference after the move.
+ */
+private fun lambdaReturns(samples: List<Sample>, net: Mlp, lambda: Double): List<Double> {
+    if (lambda >= 1.0) return samples.map { it.target }
+    val targets = DoubleArray(samples.size)
+    for (seat in samples.map { it.seat }.distinct()) {
+        val own = samples.indices.filter { samples[it].seat == seat }
+        var g = 0.0
+        for (k in own.indices.reversed()) {
+            val s = samples[own[k]]
+            g = if (k == own.lastIndex) s.target else {
+                val next = samples[own[k + 1]]
+                (next.after - s.after) + (1 - lambda) * net.evaluate(next.x) + lambda * g
+            }
+            targets[own[k]] = g
+        }
+    }
+    return targets.toList()
+}
+
+private fun trainNet(games: Int, out: File, resume: File?, lambda: Double = 1.0) = runBlocking(Dispatchers.Default) {
     val net = resume?.let { Mlp.fromBytes(it.readBytes()) } ?: Mlp.random(intArrayOf(RawAfterstate.SIZE, 128, 64, 1), 50.0, Random(42))
     val trainer = AdamTrainer(net)
     val random = Random(7)
@@ -178,12 +204,13 @@ private fun trainNet(games: Int, out: File, resume: File?) = runBlocking(Dispatc
             }
         }.awaitAll()
         val samples = results.flatMap { it.samples }
+        val targets = results.flatMap { lambdaReturns(it.samples, snapshot, lambda) }
         for (s in samples) {
             val k = if (isEndgame(s.x)) 2 else 0
             err[k] += kotlin.math.abs(snapshot.evaluate(s.x) - s.target); err[k + 1]++
         }
         trainer.learningRate = if (played < games * 2 / 3) 1e-3 else 3e-4
-        trainErr += trainOn(trainer, samples.map { it.x }, samples.map { it.target }, random)
+        trainErr += trainOn(trainer, samples.map { it.x }, targets, random)
         lots++
         played += lot
         if (lots % 50 == 0 || played >= games) {
@@ -265,14 +292,22 @@ fun main(args: Array<String>) {
             show(listOf("Belzé", "Nono"), listOf(belze(w, r), beginner(r)), seed)
             show(listOf("Belzé-1", "Belzé-2"), listOf(belze(w, r), belze(w, r)), seed + 1)
         }
-        "trainnet" -> trainNet(args[1].toInt(), File(args[2]), args.getOrNull(3)?.let(::File))
+        // trainnet <games> <out> [--lambda=0.7] [--resume=net.bin]
+        "trainnet" -> {
+            val options = args.drop(3).associate { it.removePrefix("--").substringBefore('=') to it.substringAfter('=') }
+            trainNet(args[1].toInt(), File(args[2]), options["resume"]?.let(::File), options["lambda"]?.toDouble() ?: 1.0)
+        }
         "evalnet" -> {
             val net = Mlp.fromBytes(File(args[1]).readBytes())
             val w = load(File(args.getOrElse(3) { "models/value-v2.txt" }))
             val n = args.getOrElse(2) { "400" }.toInt()
             match("Réseau contre Belzé-bot", n, { r -> neural(net, r) }, { r -> belze(w, r) })
             match("Réseau contre Nono-bot débutant", n, { r -> neural(net, r) }, ::beginner)
+            args.getOrNull(4)?.let { other ->
+                val previous = Mlp.fromBytes(File(other).readBytes())
+                match("Réseau contre $other", n, { r -> neural(net, r) }, { r -> neural(previous, r) })
+            }
         }
-        else -> println("usage: baseline [games] | train <games> <out> | eval <weights> [games] | trainnet <games> <out.bin> [resume.bin] | evalnet <net.bin> [games] [belze weights]")
+        else -> println("usage: baseline [games] | train <games> <out> | eval <weights> [games] | trainnet <games> <out.bin> [--lambda=x] [--resume=net.bin] | evalnet <net.bin> [games] [belze weights] [other net.bin]")
     }
 }
