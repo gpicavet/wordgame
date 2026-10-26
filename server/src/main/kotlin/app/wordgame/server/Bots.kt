@@ -23,10 +23,20 @@ class ServerBot(
     val userId get() = "bot-$level"
 }
 
-/** NonoBot and BelzéBot, as in the app's solo mode. */
-fun serverBots(lexicon: Lexicon, common: WordList, belzeWeights: DoubleArray, random: Random): List<ServerBot> = listOf(
-    ServerBot("nono", "NonoBot") { state, seat, _ -> BeginnerBot(lexicon, common, random).play(state, seat) },
+/**
+ * What a robot knows of a language: the whole dictionary, the everyday words it actually plays, and BelzéBot's
+ * weights learned on games in that language.
+ */
+class BotVocabulary(val lexicon: Lexicon, val common: WordList, val belzeWeights: DoubleArray)
+
+/** NonoBot and BelzéBot, as in the app's solo mode, in every language of [vocabularies] (by game language). */
+fun serverBots(vocabularies: Map<String, BotVocabulary>, random: Random): List<ServerBot> = listOf(
+    ServerBot("nono", "NonoBot") { state, seat, _ ->
+        val v = vocabularies.getValue(state.language)
+        BeginnerBot(v.lexicon, v.common, random).play(state, seat)
+    },
     ServerBot("belze", "BelzéBot") { state, seat, history ->
-        ValueBot(lexicon, belzeWeights, random, vocabulary = common).decide(state, seat, bingoAllowed(history, seat, random)).action
+        val v = vocabularies.getValue(state.language)
+        ValueBot(v.lexicon, v.belzeWeights, random, vocabulary = v.common).decide(state, seat, bingoAllowed(history, seat, random)).action
     },
 )

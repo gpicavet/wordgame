@@ -6,6 +6,7 @@ import app.wordgame.engine.Afterstate
 import app.wordgame.engine.Dawg
 import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
+import app.wordgame.engine.RuleSet
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
@@ -58,10 +59,10 @@ class AppContainer(context: Context) {
     val session = Session(context)
     val api = ApiClient(session)
     val dictionary = DictionaryLoader(context)
-    val solo: List<SoloStore> = SoloBot.entries.map { SoloStore(context, dictionary, session, it) }
+    /** One solo game per robot and language. */
+    val solo: List<SoloStore> = SoloBot.entries.flatMap { bot -> RuleSet.LANGUAGES.map { SoloStore(context, dictionary, session, bot, it) } }
 
-    fun backend(gameId: String): GameBackend =
-        SoloBot.byGameId(gameId)?.let { bot -> solo.first { it.bot == bot }.backend } ?: ServerBackend(api, gameId)
+    fun backend(gameId: String): GameBackend = solo.firstOrNull { it.gameId == gameId }?.backend ?: ServerBackend(api, gameId)
 }
 
 /** Account token. Losing it means losing the account until account linking exists. */
@@ -80,33 +81,37 @@ private const val EXTRA_WORDS = "fr-2lettres.txt"
 
 class DictionaryLoader(private val context: Context) {
     private val mutex = Mutex()
-    private var lexicon: Lexicon? = null
+    private val lexicons = HashMap<String, Lexicon>()
 
-    private var common: Dawg? = null
+    private val commons = HashMap<String, Dawg>()
 
-    private var expert: DoubleArray? = null
+    private val experts = HashMap<String, DoubleArray>()
 
-    /** BelzéBot's learned weights (models/value-v2.txt). */
-    suspend fun expertWeights(): DoubleArray = mutex.withLock {
-        expert ?: withContext(Dispatchers.IO) {
-            Afterstate.parseWeights(context.assets.open("value-v2.txt").bufferedReader().use { it.readText() })
-        }.also { expert = it }
+    /** BelzéBot's weights learned on games in [language] (models/value-v2.txt, models/value-en-v1.txt). */
+    suspend fun expertWeights(language: String): DoubleArray = mutex.withLock {
+        experts[language] ?: withContext(Dispatchers.IO) {
+            val file = if (language == "en") "value-en-v1.txt" else "value-v2.txt"
+            Afterstate.parseWeights(context.assets.open(file).bufferedReader().use { it.readText() })
+        }.also { experts[language] = it }
     }
 
-    /** Everyday vocabulary, for the bots. */
-    suspend fun common(): Dawg = mutex.withLock {
-        common ?: withContext(Dispatchers.IO) {
-            Dawg.fromBytes(context.assets.open("fr-courant.dawg").use { it.readBytes() })
-        }.also { common = it }
+    /** Everyday vocabulary of [language] ("fr", "en"), for the bots. */
+    suspend fun common(language: String): Dawg = mutex.withLock {
+        commons[language] ?: withContext(Dispatchers.IO) {
+            Dawg.fromBytes(context.assets.open("$language-courant.dawg").use { it.readBytes() })
+        }.also { commons[language] = it }
     }
 
-    suspend fun get(): Lexicon = mutex.withLock {
-        lexicon ?: withContext(Dispatchers.IO) {
-            val dawg = Dawg.fromBytes(context.assets.open("fr-libre.dawg").use { it.readBytes() })
+    /** Dictionary of [language]: fr-libre (+ the private French supplement) or en-enable. */
+    suspend fun get(language: String): Lexicon = mutex.withLock {
+        lexicons[language] ?: withContext(Dispatchers.IO) {
+            val file = if (language == "en") "en-enable.dawg" else "fr-libre.dawg"
+            val dawg = Dawg.fromBytes(context.assets.open(file).use { it.readBytes() })
             // Private supplement, bundled only when dictionaries/private/ exists at build time.
-            val extra = runCatching { context.assets.open(EXTRA_WORDS).bufferedReader().use { ExtraWords.parse(it.readText()) } }.getOrNull()
+            val extra = if (language != "fr") null else
+                runCatching { context.assets.open(EXTRA_WORDS).bufferedReader().use { ExtraWords.parse(it.readText()) } }.getOrNull()
             Lexicon(dawg, extra)
-        }.also { lexicon = it }
+        }.also { lexicons[language] = it }
     }
 }
 
@@ -146,20 +151,25 @@ class ApiClient(private val session: Session) {
 
     suspend fun game(id: String): GameView = http.get("/api/v1/games/$id") { auth() }.result()
 
-    suspend fun createGame(friends: List<String>, bots: List<String>): GameView =
-        http.post("/api/v1/games") { auth(); json(CreateGameRequest(friends.singleOrNull()?.takeIf { bots.isEmpty() }, friends, bots)) }.result()
+    suspend fun createGame(friends: List<String>, bots: List<String>, language: String): GameView =
+        http.post("/api/v1/games") {
+            auth()
+            json(CreateGameRequest(friends.singleOrNull()?.takeIf { bots.isEmpty() }, friends, bots, language))
+        }.result()
 
     suspend fun registerDevice(token: String) {
         http.post("/api/v1/devices") { auth(); json(DeviceRequest(token)) }.result<Unit>()
     }
 
-    suspend fun stats(): PlayerStats = http.get("/api/v1/me/stats") { auth() }.result()
+    suspend fun stats(language: String): PlayerStats =
+        http.get("/api/v1/me/stats") { auth(); url.parameters.append("language", language) }.result()
 
     suspend fun deleteGame(id: String) {
         http.delete("/api/v1/games/$id") { auth() }.result<Unit>()
     }
 
-    suspend fun matchmake(): MatchmakingResponse = http.post("/api/v1/matchmaking") { auth() }.result()
+    suspend fun matchmake(language: String): MatchmakingResponse =
+        http.post("/api/v1/matchmaking") { auth(); url.parameters.append("language", language) }.result()
 
     suspend fun move(game: GameView, action: Action): GameView =
         http.post("/api/v1/games/${game.id}/moves") { auth(); json(MoveRequest(game.moveNumber, action)) }.result()

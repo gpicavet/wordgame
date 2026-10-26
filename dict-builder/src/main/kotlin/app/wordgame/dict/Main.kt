@@ -21,7 +21,8 @@ import java.util.zip.GZIPOutputStream
  * and <out>/fr-libre.txt.gz (the derived list, published to comply with the MPL).
  */
 fun main(args: Array<String>) {
-    require(args.size == 2) { "usage: <lexique-grammalecte-fr.txt> <output-dir>" }
+    if (args.firstOrNull() == "en") return buildEnglish(args.drop(1))
+    require(args.size == 2) { "usage: <lexique-grammalecte-fr.txt> <output-dir> | en <enable1.txt> <scowl-final-dir> <output-dir>" }
     val source = File(args[0])
     val out = File(args[1])
 
@@ -86,6 +87,34 @@ fun main(args: Array<String>) {
     }
     println("${words.size} words, ${dawg.edgeCount} edges, ${dawg.edgeCount * 4 / 1024} KiB")
 }
+
+/**
+ * Builds the English word list: ENABLE (public domain), 2 to 15 letters, as <out>/bin/en-enable.dawg.
+ * Everyday vocabulary for the beginner bot (<out>/bin/en-courant.dawg): the ENABLE words that are also in
+ * the SCOWL lists (Kevin Atkinson, permissive license) of size 35 or less, English and American spellings.
+ */
+private fun buildEnglish(args: List<String>) {
+    require(args.size == 3) { "usage: en <enable1.txt> <scowl-final-dir> <output-dir>" }
+    val (enable, scowl, out) = args.map(::File)
+    val words = enable.readLines().map { it.trim().uppercase() }.filter { w -> w.length in 2..15 && w.all { it in 'A'..'Z' } }.toSortedSet()
+    val common = scowl.listFiles()!!
+        .filter { f -> f.name.startsWith("english-words.") || f.name.startsWith("american-words.") }
+        .filter { f -> f.name.substringAfterLast('.').toInt() <= COMMON_SCOWL_SIZE }
+        .flatMap { it.readLines(Charsets.ISO_8859_1) }
+        .map { it.trim() }
+        .filter { w -> w.isNotEmpty() && w.all { it in 'a'..'z' } }
+        .map { it.uppercase() }
+        .filterTo(sortedSetOf()) { it in words }
+    File(out, "bin").mkdirs()
+    val dawg = DawgBuilder().apply { words.forEach(::add) }.build()
+    File(out, "bin/en-enable.dawg").writeBytes(dawg.toBytes())
+    val commonDawg = DawgBuilder().apply { common.forEach(::add) }.build()
+    File(out, "bin/en-courant.dawg").writeBytes(commonDawg.toBytes())
+    println("${words.size} words, ${dawg.edgeCount * 4 / 1024} KiB; ${common.size} common words, ${commonDawg.edgeCount * 4 / 1024} KiB")
+}
+
+/** SCOWL sizes up to 35: the words of an ordinary small dictionary. */
+private const val COMMON_SCOWL_SIZE = 35
 
 /** Grammalecte frequency index (0-9, from large corpora): 6+ reads as everyday vocabulary. */
 private const val COMMON_INDEX = 6

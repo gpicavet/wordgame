@@ -32,12 +32,23 @@ import app.wordgame.android.SoloBot
 
 /** Who sits in a seat. [RANDOM] only for player 2, and then the game is a duel. */
 enum class SeatKind(val label: String) {
-    FRIEND("Ami"),
+    FRIEND("$FRIEND_ICON Ami"),
     RANDOM("Hasard"),
     ROBOT("$ROBOT_ICON Robot"),
 }
 
 const val ROBOT_ICON = "🤖"
+const val FRIEND_ICON = "🤸"
+
+/** Language of the words of a game. */
+enum class GameLanguage(val code: String, val flag: String, val label: String) {
+    FR("fr", "🇫🇷", "Français"),
+    EN("en", "🇬🇧", "English");
+
+    companion object {
+        fun of(code: String) = entries.firstOrNull { it.code == code } ?: FR
+    }
+}
 
 /** An opponent seat: a friend (by nickname), a random player or a robot (picked in a list). */
 class SeatChoice(kind: SeatKind = SeatKind.FRIEND) {
@@ -46,8 +57,8 @@ class SeatChoice(kind: SeatKind = SeatKind.FRIEND) {
     var bot by mutableStateOf(SoloBot.NONO)
 }
 
-/** What the player chose: the opponents in seat order (players 2 to 4). */
-class GameSetup(val seats: List<SeatChoice>) {
+/** What the player chose: the language, and the opponents in seat order (players 2 to 4). */
+class GameSetup(val seats: List<SeatChoice>, val language: GameLanguage) {
     val random get() = seats.first().kind == SeatKind.RANDOM
     val friends get() = seats.filter { it.kind == SeatKind.FRIEND }.map { it.nickname }
     val bots get() = seats.filter { it.kind == SeatKind.ROBOT }.map { it.bot }
@@ -60,7 +71,8 @@ class GameSetup(val seats: List<SeatChoice>) {
 @Composable
 fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
     val seats = remember { mutableStateListOf(SeatChoice()) }
-    val setup = GameSetup(seats)
+    var language by remember { mutableStateOf(GameLanguage.FR) }
+    val setup = GameSetup(seats, language)
     val problem = when {
         setup.friends.any { it.length < 3 } -> "Indique le pseudo de chaque ami"
         setup.friends.map { it.lowercase() }.toSet().size < setup.friends.size -> "Chaque ami ne peut être choisi qu'une fois"
@@ -72,6 +84,7 @@ fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
         title = { Text("Nouvelle partie") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LanguagePicker(language) { language = it }
                 seats.forEachIndexed { i, seat ->
                     SeatEditor(
                         number = i + 2,
@@ -98,6 +111,19 @@ fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LanguagePicker(language: GameLanguage, onSelect: (GameLanguage) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Langue", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GameLanguage.entries.forEach { l ->
+                FilterChip(selected = language == l, onClick = { onSelect(l) }, label = { Text("${l.flag} ${l.label}", maxLines = 1) })
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)

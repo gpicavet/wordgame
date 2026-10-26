@@ -41,15 +41,13 @@ class ServerBackend(private val api: ApiClient, private val gameId: String) : Ga
     override suspend fun delete() = api.deleteGame(gameId)
 }
 
-/** Solo opponents. Each has its own game in progress, saved in its own file. */
-/** [serverLevel]: the same robot in online games ([app.wordgame.protocol.CreateGameRequest.bots]). */
+/**
+ * Solo opponents. Each has its own game in progress per language, saved in its own file.
+ * [serverLevel]: the same robot in online games ([app.wordgame.protocol.CreateGameRequest.bots]).
+ */
 enum class SoloBot(val gameId: String, val displayName: String, val level: String, val file: String, val serverLevel: String) {
     NONO("solo", "NonoBot", "débutant", "solo.json", "nono"),
-    BELZE("solo-belze", "BelzéBot", "expert", "solo-belze.json", "belze");
-
-    companion object {
-        fun byGameId(id: String) = entries.firstOrNull { it.gameId == id }
-    }
+    BELZE("solo-belze", "BelzéBot", "expert", "solo-belze.json", "belze"),
 }
 
 @Serializable
@@ -62,18 +60,20 @@ private data class SoloGame(val state: GameState, val moves: List<SoloMove>)
 data class SoloSummary(val myScore: Int, val botScore: Int, val myTurn: Boolean, val finished: Boolean, val won: Boolean?)
 
 /**
- * One solo game against [bot], saved in a file on the phone. Same rules engine as the server.
+ * One solo game against [bot] in [language], saved in a file on the phone (French keeps the original names). Same rules engine as the server.
  * The player is seat 0. The bot plays when the game is loaded and it is its turn.
  * - NonoBot: [BeginnerBot] (everyday words, not always the best move);
- * - BelzéBot: [ValueBot] with the weights learned by self-play (models/value-v2.txt), everyday words too.
+ * - BelzéBot: [ValueBot] with the weights learned by self-play in the game's language, everyday words too.
  */
 class SoloStore(
     context: Context,
     private val dictionary: DictionaryLoader,
     private val session: Session,
     val bot: SoloBot,
+    val language: String,
 ) {
-    private val file = File(context.filesDir, bot.file)
+    val gameId = if (language == "fr") bot.gameId else "${bot.gameId}-$language"
+    private val file = File(context.filesDir, if (language == "fr") bot.file else bot.file.replace(".json", "-$language.json"))
     private val random = SecureRandom().asKotlinRandom()
     private val lock = Mutex()
 
@@ -88,7 +88,7 @@ class SoloStore(
     /** Starts a new game (replacing a finished or abandoned one); the player or the bot starts at random. */
     suspend fun start() = lock.withLock {
         withContext(Dispatchers.IO) {
-            val state = Game.new(RuleSet.DEFAULT, 2, random)
+            val state = Game.new(RuleSet.defaultFor(language), 2, random)
             write(SoloGame(state.copy(currentPlayer = random.nextInt(2)), emptyList()))
         }
     }
@@ -113,7 +113,7 @@ class SoloStore(
         override suspend fun move(game: GameView, action: Action): GameView = lock.withLock {
             val current = withContext(Dispatchers.IO) { read() } ?: error("Aucune partie solo")
             if (game.moveNumber != current.state.moveNumber) throw ApiFailure(ApiError("STALE_GAME", "La partie a changé"))
-            val lexicon = dictionary.get()
+            val lexicon = dictionary.get(language)
             when (val outcome = Game.apply(current.state, 0, action, lexicon.words, random)) {
                 is MoveOutcome.Rejected -> throw ApiFailure(ApiError(outcome.error.name, outcome.error.name, outcome.unknownWords))
                 is MoveOutcome.Applied -> {
@@ -128,12 +128,14 @@ class SoloStore(
     }
 
     private suspend fun botTurn(game: SoloGame): SoloGame {
+        val lexicon = dictionary.get(language)
+        val common = dictionary.common(language)
         val action = when (bot) {
-            SoloBot.NONO -> BeginnerBot(dictionary.get(), dictionary.common(), random).play(game.state, 1)
-            SoloBot.BELZE -> ValueBot(dictionary.get(), dictionary.expertWeights(), random, vocabulary = dictionary.common())
+            SoloBot.NONO -> BeginnerBot(lexicon, common, random).play(game.state, 1)
+            SoloBot.BELZE -> ValueBot(lexicon, dictionary.expertWeights(language), random, vocabulary = common)
                 .decide(game.state, 1, bingoAllowed(game.moves.map { it.record }, 1, random)).action
         }
-        val outcome = Game.apply(game.state, 1, action, dictionary.get().words, random)
+        val outcome = Game.apply(game.state, 1, action, lexicon.words, random)
         check(outcome is MoveOutcome.Applied) { "Bot move rejected: $outcome" }
         return SoloGame(outcome.state, game.moves + SoloMove(outcome.record, System.currentTimeMillis()))
     }
@@ -142,7 +144,7 @@ class SoloStore(
         val s = game.state
         val names = listOf(session.nickname ?: "Toi", bot.displayName)
         return GameView(
-            id = bot.gameId,
+            id = gameId,
             rulesId = s.rulesId,
             board = s.board,
             rack = s.players[0].rack,

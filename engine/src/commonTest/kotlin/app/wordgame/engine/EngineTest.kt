@@ -193,6 +193,18 @@ class ClassicRulesTest {
     }
 
     @Test
+    fun englishBagOnTheSameBoard() {
+        val english = RuleSet.defaultFor("en")
+        assertEquals("en", english.language)
+        assertEquals(100, english.fullBag().length)
+        assertEquals(12, english.fullBag().count { it == 'E' })
+        assertEquals(10, english.points('Q'))
+        assertEquals(5, english.points('K'))
+        assertEquals(layout.premiumAt(1, 5), english.layout.premiumAt(1, 5))
+        assertEquals(english, RuleSet.byId("en-classic"))
+    }
+
+    @Test
     fun standardPremiumLayout() {
         assertEquals(Premium.DOUBLE_WORD, layout.premiumAt(7, 7))
         listOf(0 to 0, 0 to 7, 0 to 14, 7 to 0, 7 to 14, 14 to 0, 14 to 7, 14 to 14)

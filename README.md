@@ -40,12 +40,25 @@ Dictionnaire additionnel privé : `dictionaries/private/fr-2lettres.txt` (non ve
 
 Corrections manuelles : `dictionaries/additions.txt` et `dictionaries/removals.txt`, un mot par ligne. N'y ajouter que des mots attestés dans une source libre (Wiktionnaire…), jamais une liste recopiée de l'ODS. Il faut relancer le générateur après chaque modification. La liste obtenue est publiée dans `dictionaries/fr-libre.txt.gz`, comme l'exige la MPL. Ce n'est **pas** l'ODS : certains mots propres au jeu de compétition (ZA, KA…) n'y figurent pas.
 
+### Anglais
+
+`dictionaries/bin/en-enable.dawg` contient les 168 551 mots de la liste **ENABLE** (domaine public), de 2 à 15 lettres. `dictionaries/bin/en-courant.dawg`, le vocabulaire courant des robots, garde les mots d'ENABLE présents dans les listes **SCOWL** de taille 35 au plus, en orthographe anglaise et américaine (licence permissive de Kevin Atkinson) :
+
+```bash
+curl -L -o dictionaries/source/enable1.txt https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt
+curl -L https://downloads.sourceforge.net/wordlist/scowl-2020.12.07.tar.gz | tar xz -C dictionaries/source
+./gradlew :dict-builder:run --args="en dictionaries/source/enable1.txt dictionaries/source/scowl-2020.12.07/final dictionaries"
+```
+
+La langue est choisie à la création de la partie (`language` : `fr` ou `en`) ; le serveur refuse l'anglais si `WORDGAME_EN_DICT` est absent. En anglais, BelzéBot utilise ses poids appris sur des parties anglaises (`models/value-en-v1.txt`, `trainer --language=en train …`).
+
 ## Règles
 
 Deux jeux de règles existent dans `engine/.../RuleSet.kt` :
 
 - `fr-classic`, utilisé par défaut pour les nouvelles parties : plateau standard (centre en mot compte double), 102 jetons avec les valeurs habituelles, bonus de 50 points quand on pose ses 7 lettres ;
-- `fr-v1` : plateau et valeurs propres au projet, avec un bonus de 40.
+- `fr-v1` : plateau et valeurs propres au projet, avec un bonus de 40 ;
+- `en-classic`, pour les parties en anglais : même plateau que `fr-classic`, les 100 jetons anglais habituels, bonus de 50.
 
 Chaque partie garde le jeu de règles avec lequel elle a été créée. **Avant une publication sur les stores**, il faudra décider lequel garder par défaut, pour limiter le risque juridique.
 

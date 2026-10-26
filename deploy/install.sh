@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update on a Debian/Ubuntu VPS, as root (safe to run again):
 #   scp server/build/libs/wordgame-server.jar dictionaries/bin/fr-libre.dawg dictionaries/bin/fr-courant.dawg \
-#       models/value-v2.txt deploy/* HOST:/tmp/wordgame/
+#       dictionaries/bin/en-enable.dawg dictionaries/bin/en-courant.dawg models/value-v2.txt models/value-en-v1.txt deploy/* HOST:/tmp/wordgame/
 #   ssh HOST sudo bash /tmp/wordgame/install.sh
 set -euo pipefail
 SRC=/tmp/wordgame
@@ -18,7 +18,8 @@ fi
 
 id wordgame >/dev/null 2>&1 || useradd --system --home /opt/wordgame --shell /usr/sbin/nologin wordgame
 mkdir -p /opt/wordgame /var/lib/wordgame
-install -m 644 "$SRC/wordgame-server.jar" "$SRC/fr-libre.dawg" "$SRC/fr-courant.dawg" "$SRC/value-v2.txt" /opt/wordgame/
+install -m 644 "$SRC/wordgame-server.jar" "$SRC/fr-libre.dawg" "$SRC/fr-courant.dawg" \
+    "$SRC/en-enable.dawg" "$SRC/en-courant.dawg" "$SRC/value-v2.txt" "$SRC/value-en-v1.txt" /opt/wordgame/
 install -m 755 "$SRC/backup.sh" /opt/wordgame/
 # Private extra words, only when provided.
 if [ -f "$SRC/fr-2lettres.txt" ]; then install -m 644 "$SRC/fr-2lettres.txt" /opt/wordgame/; fi

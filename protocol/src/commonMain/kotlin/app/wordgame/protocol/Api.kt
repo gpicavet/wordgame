@@ -28,14 +28,15 @@ data class Me(val userId: String, val nickname: String)
 data class DeviceRequest(val token: String)
 
 /**
- * A game with friends (by nickname) and robots (by level: "nono", "belze"), 2 to 4 players with the caller.
- * [opponentNickname] is the single friend of older app versions.
+ * A game with friends (by nickname) and robots (by level: "nono", "belze"), 2 to 4 players with the caller,
+ * in [language] ("fr" or "en"). [opponentNickname] is the single friend of older app versions.
  */
 @Serializable
 data class CreateGameRequest(
     val opponentNickname: String? = null,
     val friends: List<String> = emptyList(),
     val bots: List<String> = emptyList(),
+    val language: String = "fr",
 )
 
 @Serializable
@@ -102,6 +103,10 @@ data class GameSummary(
     val status: GameStatus,
     val won: Boolean?,
     val updatedAt: Long,
+    /** Language of the words: "fr" or "en". */
+    val language: String = "fr",
+    /** Every other player is a robot. */
+    val allBots: Boolean = false,
 )
 
 @Serializable

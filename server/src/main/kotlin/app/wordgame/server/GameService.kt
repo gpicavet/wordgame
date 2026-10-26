@@ -46,8 +46,8 @@ class ApiException(
 
 class GameService(
     private val db: Database,
-    private val words: WordList,
-    private val rules: RuleSet = RuleSet.DEFAULT,
+    /** Dictionary of each language games can be played in ("fr", "en"). */
+    private val dictionaries: Map<String, WordList>,
     private val turnTimeout: Duration = 72.hours,
     private val now: () -> Long = System::currentTimeMillis,
     private val random: Random = SecureRandom().asKotlinRandom(),
@@ -55,6 +55,12 @@ class GameService(
     private val bots: List<ServerBot> = emptyList(),
 ) {
     private val botsById = bots.associateBy { it.userId }
+
+    private fun words(state: GameState) = dictionaries.getValue(state.language)
+
+    private fun checkLanguage(language: String) {
+        if (language !in dictionaries) throw ApiException(HttpStatusCode.BadRequest, "UNKNOWN_LANGUAGE", "Langue non disponible : $language")
+    }
 
     private inner class Seat(val userId: String, val nickname: String) {
         val bot get() = botsById[userId]
@@ -103,18 +109,24 @@ class GameService(
                 status = game.state.status,
                 won = game.state.winner?.let { it == seat },
                 updatedAt = query("SELECT updated_at FROM games WHERE id = ?", id) { it.getLong(1) }.single(),
+                language = game.state.language,
+                allBots = game.seats.indices.all { it == seat || game.seats[it].bot != null },
             )
         }
     }
 
-    /** Computed from the stored games and moves on each call: cheap at this scale, nothing to keep in sync. */
-    suspend fun stats(user: User): PlayerStats = db.tx {
+    /**
+     * Over the games in [language] (all languages when null). Computed from the stored games and moves on each
+     * call: cheap at this scale, nothing to keep in sync.
+     */
+    suspend fun stats(user: User, language: String? = null): PlayerStats = db.tx {
         val ids = query("SELECT game_id FROM game_players WHERE user_id = ?", user.id) { it.getString(1) }
         val finished = ArrayList<FinishedGame>()
         val myMoves = ArrayList<Pair<MoveRecord, Pair<String, Long>>>() // move, (opponent, playedAt)
         var active = 0
         for (id in ids) {
             val game = load(id)
+            if (language != null && game.state.language != language) continue
             val seat = game.seatOf(user)
             val opponent = game.opponents(seat)
             val state = game.state
@@ -152,7 +164,7 @@ class GameService(
             averageScore = finished.takeIf { it.isNotEmpty() }?.map { it.myScore }?.average(),
             averageMargin = finished.takeIf { it.isNotEmpty() }?.map { it.myScore - it.opponentScore }?.average(),
             pointsPerTurn = turns.takeIf { it.isNotEmpty() }?.map { it.first.score }?.average(),
-            bingos = plays.count { it.first.tiles.size == rules.rackSize },
+            bingos = plays.count { it.first.tiles.size == RuleSet.DEFAULT.rackSize },
             bestMove = best?.let { (m, ctx) -> BestMove(m.words.map { it.word }, m.score, ctx.first, ctx.second) },
             bestGame = finished.maxByOrNull { it.myScore },
             longestWord = plays.flatMap { it.first.words }.maxWithOrNull(compareBy({ it.word.length }, { it.score }))?.word,
@@ -170,6 +182,7 @@ class GameService(
 
     /** A game with friends (each at most once) and robots (the same one possibly twice): 2 to 4 players with the caller. */
     suspend fun createGame(user: User, request: CreateGameRequest): GameView = db.tx {
+        checkLanguage(request.language)
         val names = request.friends.ifEmpty { listOfNotNull(request.opponentNickname) }
         if (names.isEmpty() && request.bots.isEmpty()) throw ApiException(HttpStatusCode.BadRequest, "NO_OPPONENT", "Choisis au moins un adversaire")
         if (names.size + request.bots.size > 3) throw ApiException(HttpStatusCode.BadRequest, "TOO_MANY_PLAYERS", "4 joueurs au plus")
@@ -193,7 +206,7 @@ class GameService(
         }
         checkActiveGameLimit(user)
         friends.forEach { checkActiveGameLimit(it) }
-        val id = insertGame(listOf(user) + friends + robots)
+        val id = insertGame(listOf(user) + friends + robots, request.language)
         val botMoves = playBots(load(id))
         val game = load(id)
         val others = if (friends.size + robots.size > 1) " (avec ${(friends + robots).joinToString { it.nickname }})" else ""
@@ -201,20 +214,22 @@ class GameService(
         view(game, user) to invitations + botMoves.filter { n -> n.userId != user.id && friends.none { it.id == n.userId } }
     }.let { (view, notifications) -> notifier.send(notifications); view }
 
-    /** Pairs with the oldest waiting player, or queues the caller. */
-    suspend fun matchmake(user: User): MatchmakingResponse = db.tx {
+    /** Pairs with the oldest player waiting for a game in the same [language], or queues the caller. */
+    suspend fun matchmake(user: User, language: String = "fr"): MatchmakingResponse = db.tx {
+        checkLanguage(language)
         checkActiveGameLimit(user)
         val waiting = query(
             """SELECT u.id, u.nickname FROM matchmaking m JOIN users u ON u.id = m.user_id
-               WHERE m.user_id <> ? ORDER BY m.queued_at LIMIT 1""",
-            user.id,
+               WHERE m.user_id <> ? AND m.language = ? ORDER BY m.queued_at LIMIT 1""",
+            user.id, language,
         ) { User(it.getString(1), it.getString(2)) }.firstOrNull()
         if (waiting == null) {
-            update("INSERT OR IGNORE INTO matchmaking(user_id, queued_at) VALUES (?, ?)", user.id, now())
+            // Waiting for one language at a time: the latest request wins.
+            update("INSERT OR REPLACE INTO matchmaking(user_id, queued_at, language) VALUES (?, ?, ?)", user.id, now(), language)
             MatchmakingResponse(null)
         } else {
             update("DELETE FROM matchmaking WHERE user_id IN (?, ?)", waiting.id, user.id)
-            val id = insertGame(listOf(user, waiting))
+            val id = insertGame(listOf(user, waiting), language)
             notifier.send(listOf(challenge(load(id), waiting, "Adversaire trouvé", "Partie contre ${user.nickname}")))
             MatchmakingResponse(id)
         }
@@ -248,7 +263,7 @@ class GameService(
         if (request.expectedMoveNumber != game.state.moveNumber) {
             throw ApiException(HttpStatusCode.Conflict, "STALE_GAME", "La partie a changé, rechargez-la")
         }
-        val notifications = when (val outcome = Game.apply(game.state, seat, request.action, words, random)) {
+        val notifications = when (val outcome = Game.apply(game.state, seat, request.action, words(game.state), random)) {
             is MoveOutcome.Rejected -> throw ApiException(
                 HttpStatusCode.UnprocessableEntity, outcome.error.name, outcome.error.name, outcome.unknownWords,
             )
@@ -296,6 +311,7 @@ class GameService(
             val history = query("SELECT record FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
                 ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1))
             }
+            val words = words(game.state)
             val outcome = Game.apply(game.state, seat, bot.play(game.state, seat, history), words, random)
                 .let { if (it is MoveOutcome.Applied) it else Game.apply(game.state, seat, Action.Pass, words, random) }
             check(outcome is MoveOutcome.Applied) { "Bot move rejected: $outcome" }
@@ -352,10 +368,10 @@ class GameService(
         }
     }
 
-    private fun Connection.insertGame(players: List<User>): String {
+    private fun Connection.insertGame(players: List<User>, language: String): String {
         val id = UUID.randomUUID().toString()
         val seats = players.shuffled(random)
-        val state = Game.new(rules, seats.size, random)
+        val state = Game.new(RuleSet.defaultFor(language), seats.size, random)
         val t = now()
         update(
             "INSERT INTO games(id, state, status, move_number, deadline, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",

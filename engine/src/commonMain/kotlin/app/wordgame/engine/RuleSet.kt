@@ -23,6 +23,8 @@ class BoardLayout(val size: Int, private val octant: Map<Pair<Int, Int>, Premium
 
 class RuleSet(
     val id: String,
+    /** Language of the words: "fr" or "en" (see [LANGUAGES]). */
+    val language: String,
     val layout: BoardLayout,
     val letters: Map<Char, LetterSpec>,
     val blankCount: Int,
@@ -51,6 +53,7 @@ class RuleSet(
          */
         val FRENCH = RuleSet(
             id = "fr-v1",
+            language = "fr",
             layout = BoardLayout(
                 size = 15,
                 octant = mapOf(
@@ -87,6 +90,7 @@ class RuleSet(
          */
         val CLASSIC = RuleSet(
             id = "fr-classic",
+            language = "fr",
             layout = BoardLayout(
                 size = 15,
                 octant = mapOf(
@@ -120,12 +124,46 @@ class RuleSet(
             bingoBonus = 50,
         )
 
-        /** Rule set of new games; existing games keep the one they were created with. */
+        /**
+         * Classic English rules: the same standard layout as [CLASSIC], the usual 100 English tiles and values,
+         * 50-point bonus.
+         */
+        val ENGLISH = RuleSet(
+            id = "en-classic",
+            language = "en",
+            layout = CLASSIC.layout,
+            letters = mapOf(
+                'A' to LetterSpec(9, 1), 'B' to LetterSpec(2, 3), 'C' to LetterSpec(2, 3),
+                'D' to LetterSpec(4, 2), 'E' to LetterSpec(12, 1), 'F' to LetterSpec(2, 4),
+                'G' to LetterSpec(3, 2), 'H' to LetterSpec(2, 4), 'I' to LetterSpec(9, 1),
+                'J' to LetterSpec(1, 8), 'K' to LetterSpec(1, 5), 'L' to LetterSpec(4, 1),
+                'M' to LetterSpec(2, 3), 'N' to LetterSpec(6, 1), 'O' to LetterSpec(8, 1),
+                'P' to LetterSpec(2, 3), 'Q' to LetterSpec(1, 10), 'R' to LetterSpec(6, 1),
+                'S' to LetterSpec(4, 1), 'T' to LetterSpec(6, 1), 'U' to LetterSpec(4, 1),
+                'V' to LetterSpec(2, 4), 'W' to LetterSpec(2, 4), 'X' to LetterSpec(1, 8),
+                'Y' to LetterSpec(2, 4), 'Z' to LetterSpec(1, 10),
+            ),
+            blankCount = 2,
+            bingoBonus = 50,
+        )
+
+        /** Languages a game can be played in. */
+        val LANGUAGES = listOf("fr", "en")
+
+        /** French rule set of new games; existing games keep the one they were created with. */
         val DEFAULT get() = CLASSIC
+
+        /** Rule set of new games in [language]. */
+        fun defaultFor(language: String): RuleSet = when (language) {
+            "en" -> ENGLISH
+            "fr" -> DEFAULT
+            else -> error("Unknown language $language")
+        }
 
         init {
             all[FRENCH.id] = FRENCH
             all[CLASSIC.id] = CLASSIC
+            all[ENGLISH.id] = ENGLISH
         }
     }
 }

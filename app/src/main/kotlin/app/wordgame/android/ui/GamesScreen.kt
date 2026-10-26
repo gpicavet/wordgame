@@ -67,8 +67,9 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
             solo.mapNotNull { store ->
                 store.summary()?.let {
                     GameSummary(
-                        store.bot.gameId, "$ROBOT_ICON ${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
+                        store.gameId, "${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
                         if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
+                        language = store.language, allBots = true,
                     )
                 }
             }
@@ -78,22 +79,22 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
             .onFailure { e -> state.update { it.copy(games = soloGames, message = e.userMessage()) } }
     }
 
-    /** Opens the game in progress against [bot], or starts a new one. */
-    fun playSolo(bot: SoloBot, onOpen: (String) -> Unit) = viewModelScope.launch {
-        val store = solo.first { it.bot == bot }
+    /** Opens the game in progress against [bot] in [language], or starts a new one. */
+    fun playSolo(bot: SoloBot, language: String, onOpen: (String) -> Unit) = viewModelScope.launch {
+        val store = solo.first { it.bot == bot && it.language == language }
         val current = withContext(Dispatchers.IO) { store.summary() }
         if (current == null || current.finished) store.start()
-        onOpen(bot.gameId)
+        onOpen(store.gameId)
     }
 
-    fun newGame(friends: List<String>, bots: List<String>, onCreated: (String) -> Unit) = viewModelScope.launch {
-        attempt { api.createGame(friends, bots) }
+    fun newGame(friends: List<String>, bots: List<String>, language: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+        attempt { api.createGame(friends, bots, language) }
             .onSuccess { onCreated(it.id) }
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
 
-    fun findRandomOpponent(onCreated: (String) -> Unit) = viewModelScope.launch {
-        attempt { api.matchmake() }
+    fun findRandomOpponent(language: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+        attempt { api.matchmake(language) }
             .onSuccess { r ->
                 if (r.gameId != null) onCreated(r.gameId!!)
                 else state.update { it.copy(waitingForOpponent = true, message = "En attente d'un adversaire…") }
@@ -144,9 +145,9 @@ fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenG
     if (showNewGame) {
         NewGameDialog(onDismiss = { showNewGame = false }) { setup ->
             when {
-                setup.random -> vm.findRandomOpponent(onOpenGame)
-                setup.solo -> vm.playSolo(setup.bots.single(), onOpenGame)
-                else -> vm.newGame(setup.friends, setup.bots.map { it.serverLevel }, onOpenGame)
+                setup.random -> vm.findRandomOpponent(setup.language.code, onOpenGame)
+                setup.solo -> vm.playSolo(setup.bots.single(), setup.language.code, onOpenGame)
+                else -> vm.newGame(setup.friends, setup.bots.map { it.serverLevel }, setup.language.code, onOpenGame)
             }
         }
     }
@@ -163,7 +164,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
         Card(Modifier.fillMaxWidth().clickable { onOpenGame(game.id) }) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(game.opponent, fontWeight = FontWeight.Bold)
+                    Text("${if (game.allBots) ROBOT_ICON else FRIEND_ICON} ${game.opponent}", fontWeight = FontWeight.Bold)
                     val result = when (game.won) {
                         true -> "Gagné"
                         false -> "Perdu"
@@ -172,6 +173,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
                     result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
                 Text("${game.myScore} – ${game.opponentScore}", style = MaterialTheme.typography.titleMedium)
+                Text(GameLanguage.of(game.language).flag, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
             }
         }
     }

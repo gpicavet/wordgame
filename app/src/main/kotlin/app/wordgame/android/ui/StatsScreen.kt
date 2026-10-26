@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -59,10 +60,13 @@ private const val AVERAGE_WINDOW = 5
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
+    var language by remember { mutableStateOf(GameLanguage.FR) }
     var stats by remember { mutableStateOf<PlayerStats?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        attempt { api.stats() }.onSuccess { stats = it }.onFailure { error = it.userMessage() }
+    LaunchedEffect(language) {
+        stats = null
+        error = null
+        attempt { api.stats(language.code) }.onSuccess { stats = it }.onFailure { error = it.userMessage() }
     }
 
     Scaffold(
@@ -73,11 +77,19 @@ fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        val s = stats
-        when {
-            error != null -> Text(error!!, Modifier.padding(padding).padding(16.dp), color = MaterialTheme.colorScheme.error)
-            s == null -> Text("Chargement…", Modifier.padding(padding).padding(16.dp))
-            else -> StatsContent(s, Modifier.padding(padding))
+        Column(Modifier.padding(padding)) {
+            // Games in each language are counted apart: the words and the values of the letters differ.
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GameLanguage.entries.forEach { l ->
+                    FilterChip(selected = language == l, onClick = { language = l }, label = { Text("${l.flag} ${l.label}") })
+                }
+            }
+            val s = stats
+            when {
+                error != null -> Text(error!!, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
+                s == null -> Text("Chargement…", Modifier.padding(16.dp))
+                else -> StatsContent(s, Modifier)
+            }
         }
     }
 }

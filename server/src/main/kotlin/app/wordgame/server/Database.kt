@@ -25,6 +25,8 @@ class Database(path: String) : AutoCloseable {
             st.execute("PRAGMA foreign_keys=ON")
             st.execute("PRAGMA busy_timeout=5000")
             SCHEMA.forEach(st::execute)
+            // Columns added after the first release: fail harmlessly once they exist.
+            MIGRATIONS.forEach { runCatching { st.execute(it) } }
         }
         connection.autoCommit = false
     }
@@ -76,6 +78,9 @@ class Database(path: String) : AutoCloseable {
             """CREATE TABLE IF NOT EXISTS matchmaking (
                 user_id TEXT PRIMARY KEY REFERENCES users(id),
                 queued_at INTEGER NOT NULL)""",
+        )
+        val MIGRATIONS = listOf(
+            "ALTER TABLE matchmaking ADD COLUMN language TEXT NOT NULL DEFAULT 'fr'",
         )
     }
 }

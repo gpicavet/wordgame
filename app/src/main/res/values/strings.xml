@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Working name: pick and check the final trademark before publishing. -->
-    <string name="app_name">Wordgame</string>
+    <!-- WordWok: the letters of the rack tossed like in a wok until a word comes out. -->
+    <string name="app_name">WordWok</string>
 </resources>

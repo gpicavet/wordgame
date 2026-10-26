@@ -46,6 +46,7 @@ data class GameState(
     val winner: Int? = null,
 ) {
     val rules get() = RuleSet.byId(rulesId)
+    val language get() = rules.language
     fun boardModel() = Board.fromRows(board)
 
     /** Seats still playing. */

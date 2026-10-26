@@ -32,9 +32,13 @@ import kotlin.random.Random
  * the end of the game; the linear value is fitted to it by normalized SGD, while the bot keeps playing with
  * the latest weights (policy improvement). Greedy play is the same bot with zero weights.
  */
-private val rules = RuleSet.CLASSIC
-private val lexicon = Lexicon(Dawg.fromBytes(File("dictionaries/bin/fr-libre.dawg").readBytes()))
-private val common = Dawg.fromBytes(File("dictionaries/bin/fr-courant.dawg").readBytes())
+/** Language of the games ("fr" or "en"), chosen with --language=… before anything is loaded. */
+private var language = "fr"
+private val rules by lazy { RuleSet.defaultFor(language) }
+private val lexicon by lazy {
+    Lexicon(Dawg.fromBytes(File(if (language == "en") "dictionaries/bin/en-enable.dawg" else "dictionaries/bin/fr-libre.dawg").readBytes()))
+}
+private val common by lazy { Dawg.fromBytes(File("dictionaries/bin/$language-courant.dawg").readBytes()) }
 
 /** Chooses a move from the state, the seat and the moves played so far. */
 private typealias Player = (GameState, Int, List<MoveRecord>) -> Decision
@@ -268,7 +272,10 @@ private fun show(names: List<String>, players: List<Player>, seed: Long) {
 
 private fun load(file: File): DoubleArray = Afterstate.parseWeights(file.readText())
 
-fun main(args: Array<String>) {
+fun main(arguments: Array<String>) {
+    // --language=en anywhere: games in English (rules, dictionary, everyday words).
+    arguments.firstOrNull { it.startsWith("--language=") }?.let { language = it.substringAfter('=') }
+    val args = arguments.filterNot { it.startsWith("--language=") }.toTypedArray()
     when (args.getOrNull(0)) {
         "baseline" -> {
             val n = args.getOrElse(1) { "400" }.toInt()
@@ -284,6 +291,10 @@ fun main(args: Array<String>) {
             match("Bot entraîné contre Nono-bot débutant", n, { r -> valueBot(w, r) }, ::beginner)
             match("Belzé-bot (scrabbles freinés) contre Nono-bot débutant", n, { r -> belze(w, r) }, ::beginner)
             match("Belzé-bot (scrabbles freinés) contre glouton", n, { r -> belze(w, r) }, ::greedyCommon)
+            args.getOrNull(3)?.let { other ->
+                val previous = load(File(other))
+                match("Belzé-bot contre Belzé-bot $other", n, { r -> belze(w, r) }, { r -> belze(previous, r) })
+            }
         }
         "show" -> {
             val w = load(File(args[1]))
@@ -308,6 +319,6 @@ fun main(args: Array<String>) {
                 match("Réseau contre $other", n, { r -> neural(net, r) }, { r -> neural(previous, r) })
             }
         }
-        else -> println("usage: baseline [games] | train <games> <out> | eval <weights> [games] | trainnet <games> <out.bin> [--lambda=x] [--resume=net.bin] | evalnet <net.bin> [games] [belze weights] [other net.bin]")
+        else -> println("usage: [--language=en] baseline [games] | train <games> <out> | eval <weights> [games] [other weights] | trainnet <games> <out.bin> [--lambda=x] [--resume=net.bin] | evalnet <net.bin> [games] [belze weights] [other net.bin]")
     }
 }

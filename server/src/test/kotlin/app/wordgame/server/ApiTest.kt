@@ -40,10 +40,11 @@ import kotlin.test.assertTrue
 class ApiTest {
     /** Accepts any word of 2+ letters except "ZZZ", so tests do not depend on random racks. */
     private val words = WordList { it.length >= 2 && it != "ZZZ" }
+    private val dictionaries = mapOf("fr" to words, "en" to words)
 
     private fun withApp(bots: List<ServerBot> = emptyList(), block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit) {
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
-        val service = GameService(Database(dbFile.path), words, bots = bots)
+        val service = GameService(Database(dbFile.path), dictionaries, bots = bots)
         testApplication {
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
@@ -177,7 +178,7 @@ class ApiTest {
         val sent = mutableListOf<Notification>()
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
         testApplication {
-            val service = GameService(Database(dbFile.path), words, notifier = { sent += it })
+            val service = GameService(Database(dbFile.path), dictionaries, notifier = { sent += it })
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
             val alice = client.register("alice")
@@ -246,6 +247,22 @@ class ApiTest {
     }
 
     @Test
+    fun matchmakingPairsOnlyPlayersOfTheSameLanguage() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val carol = client.register("carol")
+        suspend fun queue(token: String, language: String): MatchmakingResponse =
+            client.post("/api/v1/matchmaking?language=$language") { bearerAuth(token) }.body()
+        assertEquals(null, queue(alice.token, "en").gameId)
+        assertEquals(null, queue(bob.token, "fr").gameId)
+        val game = assertNotNull(queue(carol.token, "en").gameId)
+        assertEquals("en-classic", client.view(alice.token, game).rulesId)
+        val summary: List<GameSummary> = client.get("/api/v1/games") { bearerAuth(carol.token) }.body()
+        assertEquals("en", summary.single().language)
+        assertEquals(false, summary.single().allBots)
+    }
+
+    @Test
     fun rejectsDuplicateNicknameAndMissingToken() = withApp { client, _ ->
         client.register("alice")
         val dup = client.post("/api/v1/auth/register") {
@@ -262,7 +279,7 @@ class ApiTest {
         var clock = 0L
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
         testApplication {
-            val service = GameService(Database(dbFile.path), words, now = { clock })
+            val service = GameService(Database(dbFile.path), dictionaries, now = { clock })
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
             val alice = client.register("alice")
@@ -332,13 +349,29 @@ class ApiTest {
         val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono", "belze"))).body()
         assertEquals(3, game.players.size)
         assertEquals("alice", game.players[game.currentSeat].nickname)
+        val summary: List<GameSummary> = client.get("/api/v1/games") { bearerAuth(alice.token) }.body()
+        assertEquals(true, summary.single().allBots)
+        assertEquals("fr", summary.single().language)
+    }
+
+    @Test
+    fun gameInEnglish() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono"), language = "en")).body()
+        assertEquals("en-classic", game.rulesId)
+        client.play(alice.token, client.view(alice.token, game.id), Action.Resign)
+        suspend fun finished(language: String) =
+            client.get("/api/v1/me/stats?language=$language") { bearerAuth(alice.token) }.body<PlayerStats>().finishedGames
+        assertEquals(1, finished("en"))
+        assertEquals(0, finished("fr"))
+        assertEquals("UNKNOWN_LANGUAGE", client.create(alice.token, CreateGameRequest(bots = listOf("nono"), language = "xx")).body<ApiError>().code)
     }
 
     @Test
     fun noNotificationWhenPlayingAloneAgainstRobots() {
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
         val sent = mutableListOf<Notification>()
-        val service = GameService(Database(dbFile.path), words, notifier = { sent += it }, bots = listOf(passingBot))
+        val service = GameService(Database(dbFile.path), dictionaries, notifier = { sent += it }, bots = listOf(passingBot))
         testApplication {
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }

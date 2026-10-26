@@ -4,6 +4,7 @@ import app.wordgame.engine.Afterstate
 import app.wordgame.engine.Dawg
 import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
+import app.wordgame.engine.WordList
 import app.wordgame.engine.plus
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
@@ -64,17 +65,35 @@ fun main() {
     // Push notifications are optional: without credentials the game works, players just are not notified.
     val notifier = env["WORDGAME_FCM_CREDENTIALS"]?.let(::File)?.takeIf { it.exists() }
         ?.let { FcmNotifier(it, db) } ?: NoNotifier.also { log.info("Push notifications disabled (no WORDGAME_FCM_CREDENTIALS)") }
+    // English: optional, games in English are refused without it.
+    val enPath = env["WORDGAME_EN_DICT"] ?: "dictionaries/bin/en-enable.dawg"
+    val english = File(enPath).takeIf { it.exists() }?.let { Dawg.fromBytes(it.readBytes()) }
+    log.info("English dictionary {}: {}", enPath, english?.let { "${it.edgeCount} edges" } ?: "absent")
     // Robots for games with friends: they need the everyday vocabulary and BelzéBot's weights.
     val commonPath = env["WORDGAME_COMMON_DICT"] ?: "dictionaries/bin/fr-courant.dawg"
+    val enCommonPath = env["WORDGAME_EN_COMMON_DICT"] ?: "dictionaries/bin/en-courant.dawg"
     val weightsPath = env["WORDGAME_BOT_WEIGHTS"] ?: "models/value-v2.txt"
+    val enWeightsPath = env["WORDGAME_EN_BOT_WEIGHTS"] ?: "models/value-en-v1.txt"
     val bots = if (File(commonPath).exists() && File(weightsPath).exists()) {
         val weights = Afterstate.parseWeights(File(weightsPath).readText())
-        serverBots(Lexicon(dawg, extra), Dawg.fromBytes(File(commonPath).readBytes()), weights, SecureRandom().asKotlinRandom())
+        // Without weights learned on English games, the French ones.
+        val enWeights = File(enWeightsPath).takeIf { it.exists() }?.let { Afterstate.parseWeights(it.readText()) } ?: weights
+        val vocabularies = buildMap {
+            put("fr", BotVocabulary(Lexicon(dawg, extra), Dawg.fromBytes(File(commonPath).readBytes()), weights))
+            if (english != null && File(enCommonPath).exists()) {
+                put("en", BotVocabulary(Lexicon(english), Dawg.fromBytes(File(enCommonPath).readBytes()), enWeights))
+            }
+        }
+        serverBots(vocabularies, SecureRandom().asKotlinRandom())
     } else {
         emptyList()
     }
     log.info("Robots: {}", bots.joinToString { it.nickname }.ifEmpty { "none (missing $commonPath or $weightsPath)" })
-    val service = GameService(db, dictionary, notifier = notifier, bots = bots)
+    val dictionaries = buildMap<String, WordList> {
+        put("fr", dictionary)
+        english?.let { put("en", it) }
+    }
+    val service = GameService(db, dictionaries, notifier = notifier, bots = bots)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
 
     embeddedServer(
@@ -130,7 +149,7 @@ fun Application.wordgame(service: GameService) {
                     call.respond(Me(user.id, user.nickname))
                 }
                 get("/games") { call.respond(service.listGames(call.user())) }
-                get("/me/stats") { call.respond(service.stats(call.user())) }
+                get("/me/stats") { call.respond(service.stats(call.user(), call.request.queryParameters["language"])) }
                 post("/devices") {
                     service.registerDevice(call.user(), call.receive<DeviceRequest>().token)
                     call.respond(HttpStatusCode.NoContent)
@@ -146,7 +165,9 @@ fun Application.wordgame(service: GameService) {
                 post("/games/{id}/moves") {
                     call.respond(service.move(call.user(), call.parameters["id"]!!, call.receive<MoveRequest>()))
                 }
-                post("/matchmaking") { call.respond(service.matchmake(call.user())) }
+                post("/matchmaking") {
+                    call.respond(service.matchmake(call.user(), call.request.queryParameters["language"] ?: "fr"))
+                }
                 delete("/matchmaking") {
                     service.leaveMatchmaking(call.user())
                     call.respond(HttpStatusCode.NoContent)

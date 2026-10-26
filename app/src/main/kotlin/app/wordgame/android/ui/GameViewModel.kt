@@ -17,6 +17,7 @@ import app.wordgame.engine.RuleSet
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.GameView
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -62,9 +63,17 @@ class GameViewModel(
     private var lexicon: Lexicon? = null
     private val words: WordList? get() = lexicon?.words
 
-    init {
+    /** Dictionary of the game's language, loaded once the game is known. */
+    private val lexiconLoaded = CompletableDeferred<Lexicon>()
+    private var lexiconRequested = false
+
+    private fun loadLexicon(game: GameView) {
+        if (lexiconRequested) return
+        lexiconRequested = true
         viewModelScope.launch {
-            lexicon = dictionary.get()
+            val loaded = dictionary.get(RuleSet.byId(game.rulesId).language)
+            lexicon = loaded
+            lexiconLoaded.complete(loaded)
             state.value.game?.let(::analyseLastMove)
         }
     }
@@ -78,7 +87,7 @@ class GameViewModel(
         }
     }
 
-    suspend fun lexicon(): Lexicon = dictionary.get()
+    suspend fun lexicon(): Lexicon = lexiconLoaded.await()
 
     suspend fun refresh() {
         attempt { backend.load() }
@@ -94,6 +103,7 @@ class GameViewModel(
             if (!changed) s.copy(game = game)
             else GameUiState(game = game, rack = game.rack.toList(), message = s.message, solo = backend.solo)
         }
+        loadLexicon(game)
         if (changed) analyseLastMove(game)
     }
 
