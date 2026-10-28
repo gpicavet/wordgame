@@ -98,6 +98,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     var showAnalysis by remember { mutableStateOf(false) }
     var lexicon by remember { mutableStateOf<Lexicon?>(null) }
     LaunchedEffect(Unit) { lexicon = vm.lexicon() }
+    var reviewShown by remember { mutableStateOf(false) }
     var exchanging by remember { mutableStateOf(false) }
 
     LaunchedEffect(gameId) { Push.gameUpdates.collect { if (it == gameId) vm.refresh() } }
@@ -191,7 +192,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
                         )
-                        else -> RoundJournal(game, state.lastMoveAnalysis)
+                        else -> RoundJournal(game, state.lastMoveAnalysis, onReview = { reviewShown = true })
                     }
                 }
                 RackView(state, rules, drag, rackTarget, onTap = vm::selectRackTile, onDrop = onDrop)
@@ -249,8 +250,14 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     if (showAnalysis) {
         val g = state.game
         val lex = lexicon
-        if (g != null && lex != null) GameAnalysisDialog(g, lex, onDismiss = { showAnalysis = false })
+        var coachWeights by remember { mutableStateOf<DoubleArray?>(null) }
+        var weightsLoaded by remember { mutableStateOf(false) }
+        LaunchedEffect(g?.id) { if (g != null) coachWeights = vm.coachWeights(g); weightsLoaded = true }
+        if (g != null && lex != null && weightsLoaded) GameAnalysisDialog(g, lex, coachWeights, onDismiss = { showAnalysis = false })
     }
+    val analysis = state.lastMoveAnalysis
+    val review = analysis?.review
+    if (reviewShown && analysis != null && review != null) MoveReviewDialog(analysis, review, onDismiss = { reviewShown = false })
     if (showUnseen) state.game?.let { UnseenTilesDialog(it, onDismiss = { showUnseen = false }) }
     if (confirmDelete) {
         AlertDialog(
@@ -329,11 +336,11 @@ private fun lastRound(game: GameView): List<MoveView> {
 }
 
 /**
- * "il y a 5 min · NonoBot · WHINE +24", one line per move of the previous round,
- * the player's own move followed by its verdict ("meilleur coup : 29 points").
+ * "il y a 5 min · NonoBot · WHINE +24", one line per move of the previous round, the player's own move followed
+ * by its verdict ("meilleur coup : 29 points"), or against one robot by its grade, which opens the advice.
  */
 @Composable
-private fun RoundJournal(game: GameView, analysis: MoveAnalysis?) {
+private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -> Unit) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -345,7 +352,9 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?) {
         for (m in lastRound(game)) {
             val mine = m.seat == game.mySeat
             val who = if (mine) "Toi" else game.players[m.seat].nickname
-            val verdict = analysis?.takeIf { mine && it.move.moveNumber == m.moveNumber }?.verdict
+            val own = analysis?.takeIf { mine && it.move.moveNumber == m.moveNumber }
+            val review = own?.review
+            val verdict = if (review != null) "${review.grade}/10 ${review.label()} ›" else own?.verdict
             Text(
                 buildAnnotatedString {
                     append("${ago(now - m.playedAt)} · $who · ${m.summary()}")
@@ -354,6 +363,7 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?) {
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (review != null) Modifier.clickable(onClick = onReview) else Modifier,
             )
         }
     }

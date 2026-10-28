@@ -32,18 +32,24 @@ import androidx.compose.ui.window.DialogProperties
 import app.wordgame.engine.Board
 import app.wordgame.engine.Candidate
 import app.wordgame.engine.Lexicon
+import app.wordgame.engine.MoveReview
 import app.wordgame.engine.MoveType
 import app.wordgame.engine.Placement
 import app.wordgame.engine.Premium
 import app.wordgame.engine.RuleSet
 import app.wordgame.engine.Solver
+import app.wordgame.engine.Tip
+import app.wordgame.engine.TipKind
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MoveView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** One of the player's moves next to the best ones that were possible with the same rack, on the board [before] it. */
-data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val before: Board) {
+/**
+ * One of the player's moves next to the best ones that were possible with the same rack, on the board [before] it.
+ * [review]: its grade and advice, in games against one robot only (see [coached]).
+ */
+data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val before: Board, val review: MoveReview? = null) {
     val played: String get() = when (move.type) {
         MoveType.PLAY -> "${move.words.first().word} (${move.score})"
         MoveType.EXCHANGE -> "Échange de ${move.exchangedCount} lettre(s)"
@@ -64,11 +70,17 @@ data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val befor
     }
 }
 
+/** One against one robot: the games where each move gets a grade, to learn from the robot. */
+val GameView.coached get() = players.size == 2 && players[1 - mySeat].bot
+
 /**
  * Replays the game to get the board before each of [seat]'s moves and runs the solver on the rack they had.
  * Moves played before racks were recorded have no rack: they are skipped.
+ * With [coachWeights] (BelzéBot's), plays and passes also get a [MoveReview].
  */
-suspend fun analyse(game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boolean = false): List<MoveAnalysis> =
+suspend fun analyse(
+    game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boolean = false, coachWeights: DoubleArray? = null,
+): List<MoveAnalysis> =
     withContext(Dispatchers.Default) {
         val rules = RuleSet.byId(game.rulesId)
         val solver = Solver(lexicon, rules)
@@ -78,7 +90,12 @@ suspend fun analyse(game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boole
         val targets = if (onlyLast) analysed.takeLast(1) else analysed
         targets.map { (index, move) ->
             val before = game.moves.take(index).fold(Board.empty(rules.boardSize)) { b, m -> b.with(m.tiles) }
-            MoveAnalysis(move, solver.bestMoves(before, move.rack!!, 5), before)
+            // Each play draws as many tiles as it placed, while the bag lasts (exchanges leave it as it was).
+            val bagBefore = rules.fullBag().length - rules.rackSize * game.players.size - game.moves.take(index).sumOf { it.tiles.size }
+            val review = if (coachWeights == null || move.type == MoveType.EXCHANGE) null else MoveReview.of(
+                before, move.rack!!, move.tiles, move.score, maxOf(0, bagBefore), rules, lexicon, coachWeights,
+            )
+            MoveAnalysis(move, solver.bestMoves(before, move.rack!!, 5), before, review)
         }
     }
 
@@ -128,13 +145,63 @@ fun MoveOnBoardDialog(title: String, before: Board, tiles: List<Placement>, rule
     )
 }
 
+fun MoveReview.label() = when (grade) {
+    10 -> "Parfait"
+    8, 9 -> "Très bien"
+    6, 7 -> "Bien"
+    4, 5 -> "Moyen"
+    else -> "À revoir"
+}
+
+fun Tip.text() = when (kind) {
+    TipKind.MORE_POINTS -> "Un autre coup rapportait $amount points de plus."
+    TipKind.Q_WITHOUT_U -> "Tu gardes un Q sans U : il est très difficile à placer."
+    TipKind.BLANK_SPENT -> "Tu as joué un joker pour peu de points : garde-le plutôt pour un scrabble."
+    TipKind.TOO_MANY_VOWELS -> "Tu gardes trop de voyelles : vise autant de voyelles que de consonnes."
+    TipKind.TOO_MANY_CONSONANTS -> "Tu gardes trop de consonnes : vise autant de voyelles que de consonnes."
+    TipKind.DUPLICATES -> "Tu gardes des lettres en double : elles se combinent mal."
+    TipKind.WEAK_LEAVE -> "Les lettres que tu gardes se placent mal : un autre coup laissait un meilleur tirage."
+    TipKind.OPENS_TRIPLE_WORD -> "Ton coup ouvre une case mot compte triple à l'adversaire."
+    TipKind.OPENS_PREMIUMS -> "Ton coup ouvre des cases bonus à l'adversaire."
+    TipKind.ENDGAME_LEAVE -> "Le sac est vide : place d'abord tes lettres chères, elles comptent contre toi à la fin."
+}
+
+/** The advice of a review, or praise when there is nothing to say. */
+fun MoveReview.advice(): List<String> = when {
+    tips.isNotEmpty() -> tips.map { it.text() }
+    grade == 10 -> listOf("C'était le meilleur coup !")
+    else -> listOf("Un autre coup était un peu meilleur, en points et en lettres gardées.")
+}
+
+/** Grade of the player's last move, its advice and the best possible score (not the word, which could still be played). */
+@Composable
+fun MoveReviewDialog(analysis: MoveAnalysis, review: MoveReview, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${review.grade}/10 · ${review.label()}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Ton coup : ${analysis.played}", fontWeight = FontWeight.Bold)
+                review.advice().forEach { Text(it) }
+                if (analysis.best.isNotEmpty()) Text("Meilleur score possible : ${analysis.bestScore} points", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "La note compare ton coup au meilleur selon BelzéBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l'adversaire.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+    )
+}
+
 /** Whole-game review: every move of the player against the 5 best possible ones, each shown on the board on a tap. */
 @Composable
-fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) {
+fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, coachWeights: DoubleArray?, onDismiss: () -> Unit) {
     var analyses by remember(game.id) { mutableStateOf<List<MoveAnalysis>?>(null) }
     var shown by remember { mutableStateOf<Triple<String, Board, List<Placement>>?>(null) }
     val rules = RuleSet.byId(game.rulesId)
-    LaunchedEffect(game.id) { analyses = analyse(game, lexicon, game.mySeat) }
+    LaunchedEffect(game.id) { analyses = analyse(game, lexicon, game.mySeat, coachWeights = coachWeights) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
@@ -156,6 +223,8 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) 
                                 " · ${list.count { it.wasBest }} meilleur(s) coup(s) sur ${list.size}",
                             fontWeight = FontWeight.Bold,
                         )
+                        val grades = list.mapNotNull { it.review?.grade }
+                        if (grades.isNotEmpty()) Text("Note moyenne : ${"%.1f".format(grades.average())}/10", fontWeight = FontWeight.Bold)
                         Text("Touche un coup pour le voir sur le plateau.", style = MaterialTheme.typography.bodySmall)
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(list, key = { it.move.moveNumber }) { a ->
@@ -177,6 +246,10 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, onDismiss: () -> Unit) 
                                             )
                                         }
                                         if (a.best.isEmpty()) Text("Aucun mot n'était possible.", style = MaterialTheme.typography.bodyMedium)
+                                        a.review?.let { r ->
+                                            Text("Note : ${r.grade}/10 · ${r.label()}", fontWeight = FontWeight.Bold)
+                                            r.advice().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                        }
                                     }
                                 }
                             }

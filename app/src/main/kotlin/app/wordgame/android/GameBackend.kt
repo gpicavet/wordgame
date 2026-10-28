@@ -149,7 +149,7 @@ class SoloStore(
             board = s.board,
             rack = s.players[0].rack,
             bagCount = s.bag.length,
-            players = s.players.mapIndexed { i, p -> PlayerView(names[i], p.score, p.rack.length) },
+            players = s.players.mapIndexed { i, p -> PlayerView(names[i], p.score, p.rack.length, bot = i != 0) },
             mySeat = 0,
             currentSeat = s.currentPlayer,
             moveNumber = s.moveNumber,

@@ -83,11 +83,15 @@ class GameViewModel(
         }
     }
 
+    /** BelzéBot's weights in games against one robot, to grade the player's moves; null otherwise. */
+    suspend fun coachWeights(game: GameView): DoubleArray? =
+        if (game.coached) dictionary.expertWeights(RuleSet.byId(game.rulesId).language) else null
+
     /** Best moves that were possible for the player's last move (computed on the phone, never sent anywhere). */
     private fun analyseLastMove(game: GameView) {
         val lex = lexicon ?: return
         viewModelScope.launch {
-            val result = analyse(game, lex, game.mySeat, onlyLast = true).firstOrNull()
+            val result = analyse(game, lex, game.mySeat, onlyLast = true, coachWeights = coachWeights(game)).firstOrNull()
             state.update { if (it.game?.moveNumber == game.moveNumber) it.copy(lastMoveAnalysis = result) else it }
         }
     }
