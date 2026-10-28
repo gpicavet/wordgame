@@ -6,6 +6,7 @@ import app.wordgame.engine.Afterstate
 import app.wordgame.engine.Dawg
 import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
+import app.wordgame.engine.Refusals
 import app.wordgame.engine.RuleSet
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
@@ -40,6 +41,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -86,6 +88,18 @@ class DictionaryLoader(private val context: Context) {
     private val commons = HashMap<String, Dawg>()
 
     private val experts = HashMap<String, DoubleArray>()
+
+    private val refusals = HashMap<String, Refusals>()
+
+    /** Why words outside the dictionary of [language] are refused (fr-refus.txt.gz, en-refus.txt.gz). */
+    suspend fun refusals(language: String): Refusals = mutex.withLock {
+        refusals[language] ?: withContext(Dispatchers.IO) {
+            val text = runCatching {
+                GZIPInputStream(context.assets.open("$language-refus.txt.gz")).bufferedReader().use { it.readText() }
+            }.getOrDefault("")
+            Refusals.parse(text)
+        }.also { refusals[language] = it }
+    }
 
     /** BelzéBot's weights learned on games in [language] (models/value-v2.txt, models/value-en-v1.txt). */
     suspend fun expertWeights(language: String): DoubleArray = mutex.withLock {

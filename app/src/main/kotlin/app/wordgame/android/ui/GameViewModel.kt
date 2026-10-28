@@ -13,6 +13,7 @@ import app.wordgame.engine.Evaluation
 import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveEvaluator
 import app.wordgame.engine.Placement
+import app.wordgame.engine.Refusals
 import app.wordgame.engine.RuleSet
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.WordList
@@ -62,6 +63,8 @@ class GameViewModel(
     val state = MutableStateFlow(GameUiState(solo = backend.solo))
     private var lexicon: Lexicon? = null
     private val words: WordList? get() = lexicon?.words
+    /** Why the unknown words of a move are refused, loaded with the dictionary. */
+    private var refusals: Refusals? = null
 
     /** Dictionary of the game's language, loaded once the game is known. */
     private val lexiconLoaded = CompletableDeferred<Lexicon>()
@@ -71,7 +74,9 @@ class GameViewModel(
         if (lexiconRequested) return
         lexiconRequested = true
         viewModelScope.launch {
-            val loaded = dictionary.get(RuleSet.byId(game.rulesId).language)
+            val language = RuleSet.byId(game.rulesId).language
+            val loaded = dictionary.get(language)
+            refusals = dictionary.refusals(language)
             lexicon = loaded
             lexiconLoaded.complete(loaded)
             state.value.game?.let(::analyseLastMove)
@@ -223,7 +228,7 @@ class GameViewModel(
             attempt { backend.move(game, action) }
                 .onSuccess { show(it); state.update { s -> s.copy(message = null) } }
                 .onFailure { e ->
-                    state.update { it.copy(message = e.userMessage()) }
+                    state.update { it.copy(message = e.userMessage(refusals)) }
                     if (e is ApiFailure && e.error.code == "STALE_GAME") {
                         refresh()
                         // A retried move whose first attempt got through (only the answer was lost):
@@ -251,7 +256,7 @@ class GameViewModel(
         return when (val e = MoveEvaluator.evaluate(Board.fromRows(game.board), tentative.map { it.placement }, rules, words)) {
             is Evaluation.Valid -> Preview("${e.words.joinToString { it.word }} : ${e.score} pts", valid = true)
             is Evaluation.Invalid -> Preview(
-                if (e.unknownWords.isNotEmpty()) "Inconnu : ${e.unknownWords.joinToString()}" else e.reason.userMessage(),
+                if (e.unknownWords.isNotEmpty()) "Refusé : ${refusedWords(e.unknownWords, refusals)}" else e.reason.userMessage(),
                 valid = false,
             )
         }

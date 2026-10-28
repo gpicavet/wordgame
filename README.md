@@ -50,6 +50,13 @@ curl -L https://downloads.sourceforge.net/wordlist/scowl-2020.12.07.tar.gz | tar
 ./gradlew :dict-builder:run --args="en dictionaries/source/enable1.txt dictionaries/source/scowl-2020.12.07/final dictionaries"
 ```
 
+### Motifs de refus
+
+Quand un mot est refusé, l'application en donne la raison : nom propre, abréviation ou sigle, mot composé (trait d'union, apostrophe), orthographe fautive, préfixe ou suffixe, mot de locution, ou mot absent du dictionnaire officiel. Sinon, elle indique « n'existe pas ». Ces motifs ne changent rien aux mots acceptés. Le générateur les écrit dans `dictionaries/bin/fr-refus.txt.gz` et `en-refus.txt.gz`, intégrés à l'application :
+
+- **en français**, il s'agit des entrées Grammalecte écartées par les filtres ci-dessus ;
+- **en anglais**, des noms propres, abréviations et contractions des listes SCOWL, ainsi que des mots SCOWL de taille 70 au plus qui manquent à ENABLE.
+
 La langue est choisie à la création de la partie (`language` : `fr` ou `en`) ; le serveur refuse l'anglais si `WORDGAME_EN_DICT` est absent. En anglais, BelzéBot utilise ses poids appris sur des parties anglaises (`models/value-en-v1.txt`, `trainer --language=en train …`).
 
 ## Règles

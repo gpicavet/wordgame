@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.Color
 import app.wordgame.android.ApiFailure
 import app.wordgame.engine.InvalidReason
 import app.wordgame.engine.Premium
+import app.wordgame.engine.Refusal
+import app.wordgame.engine.Refusals
 import java.io.IOException
 
 /** Own visual identity: slate tiles and a teal/amber/purple board, far from any commercial word game. */
@@ -49,9 +51,9 @@ fun WordgameTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-fun Throwable.userMessage(): String = when (this) {
+fun Throwable.userMessage(refusals: Refusals? = null): String = when (this) {
     is ApiFailure -> when (error.code) {
-        "UNKNOWN_WORDS" -> "Mot inconnu : ${error.unknownWords.joinToString()}"
+        "UNKNOWN_WORDS" -> "Refusé : ${refusedWords(error.unknownWords, refusals)}"
         "ILLEGAL_PLACEMENT" -> "Placement invalide"
         "NOT_YOUR_TURN" -> "Ce n'est pas ton tour"
         "STALE_GAME" -> "La partie a changé, elle a été rechargée"
@@ -63,6 +65,21 @@ fun Throwable.userMessage(): String = when (this) {
     }
     is IOException -> "Serveur injoignable, vérifie ta connexion"
     else -> message ?: "Erreur inattendue"
+}
+
+/** "OCTOBER (nom propre), XQZ (n'existe pas)". */
+fun refusedWords(words: List<String>, refusals: Refusals?): String =
+    words.joinToString { word -> "$word (${refusals?.get(word).userMessage()})" }
+
+fun Refusal?.userMessage(): String = when (this) {
+    null -> "n'existe pas"
+    Refusal.PROPER_NOUN -> "nom propre"
+    Refusal.ABBREVIATION -> "abréviation ou sigle"
+    Refusal.COMPOUND -> "s'écrit avec un trait d'union ou une apostrophe"
+    Refusal.MISSPELLING -> "orthographe fautive"
+    Refusal.AFFIX -> "préfixe ou suffixe"
+    Refusal.LOCUTION -> "n'existe que dans une locution"
+    Refusal.NOT_LISTED -> "absent du dictionnaire officiel"
 }
 
 fun InvalidReason.userMessage(): String = when (this) {
