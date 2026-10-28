@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
@@ -51,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -76,6 +78,7 @@ import app.wordgame.engine.MoveType
 import app.wordgame.engine.Premium
 import app.wordgame.engine.RuleSet
 import app.wordgame.protocol.GameView
+import app.wordgame.protocol.MoveView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
@@ -171,24 +174,24 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                         modifier = Modifier.padding(start = 8.dp).size(44.dp),
                     ) { Text("⋯", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                 }
-                // Fixed height so the rack does not jump under the player's finger when a preview appears.
+                // Fixed height so the rack does not jump under the player's finger when a preview appears:
+                // one line per player.
                 Box(
-                    Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp).clickable {
+                    Modifier.fillMaxWidth().height(maxOf(48, game.players.size * 18).dp).padding(horizontal = 8.dp).clickable {
                         if (state.message != null) vm.dismissMessage()
                     },
                 ) {
                     val preview = state.preview
                     val message = state.message
-                    val analysis = state.lastMoveAnalysis
                     when {
                         message != null -> Text(message, color = MaterialTheme.colorScheme.error, maxLines = 2)
-                        preview == null && analysis != null -> LastMoveAnalysisText(analysis)
                         preview != null -> Text(
                             preview.text,
                             color = if (preview.valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
                         )
+                        else -> RoundJournal(game, state.lastMoveAnalysis)
                     }
                 }
                 RackView(state, rules, drag, rackTarget, onTap = vm::selectRackTile, onDrop = onDrop)
@@ -304,25 +307,6 @@ private fun PlayersHeader(game: GameView) {
 
 private fun statusLine(game: GameView, state: GameUiState): String {
     val opponent = game.players[game.currentSeat].nickname
-    val last = game.moves.lastOrNull()?.let { m ->
-        val mine = m.seat == game.mySeat
-        val who = if (mine) "Toi" else game.players[m.seat].nickname
-        // "Tu as passé" / "NonoBot a passé"
-        val subject = if (mine) "Tu as" else "$who a"
-        val text = when (m.type) {
-            MoveType.PLAY -> "$who : ${m.words.joinToString { it.word }} +${m.score}" +
-                (if (m.end == GameEnd.OUT) " (+${m.endAdjustments[m.seat]} de bonus de fin)" else "")
-            MoveType.EXCHANGE -> "$subject échangé ${m.exchangedCount} lettre(s)"
-            MoveType.PASS -> if (m.end == GameEnd.BLOCKED) "Partie bloquée" else "$subject passé"
-            MoveType.RESIGN -> "$subject abandonné"
-            MoveType.TIMEOUT -> "$subject dépassé le temps"
-        }
-        // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
-        val deductions = m.endAdjustments.withIndex().filter { it.value < 0 }.joinToString { (seat, delta) ->
-            "${if (seat == game.mySeat) "toi" else game.players[seat].nickname} $delta"
-        }
-        if (deductions.isEmpty()) text else "$text · lettres restantes : $deductions"
-    }
     val turn = when {
         game.status == GameStatus.FINISHED -> when (game.winnerSeat) {
             game.mySeat -> "Partie gagnée !"
@@ -332,7 +316,65 @@ private fun statusLine(game: GameView, state: GameUiState): String {
         state.myTurn -> "À toi de jouer"
         else -> "Au tour de $opponent"
     }
-    return listOfNotNull(turn, last).joinToString(" · ")
+    // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
+    val deductions = game.moves.lastOrNull()?.endAdjustments.orEmpty().withIndex().filter { it.value < 0 }
+        .joinToString { (seat, delta) -> "${if (seat == game.mySeat) "toi" else game.players[seat].nickname} $delta" }
+    return if (deductions.isEmpty()) turn else "$turn · lettres restantes : $deductions"
+}
+
+/** The previous round: each player's last move, back to the first player who appears twice, oldest first. */
+private fun lastRound(game: GameView): List<MoveView> {
+    val seats = HashSet<Int>()
+    return game.moves.asReversed().takeWhile { seats.add(it.seat) }.reversed()
+}
+
+/**
+ * "il y a 5 min · NonoBot · WHINE +24", one line per move of the previous round,
+ * the player's own move followed by its verdict ("meilleur coup : 29 points").
+ */
+@Composable
+private fun RoundJournal(game: GameView, analysis: MoveAnalysis?) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30.seconds)
+            now = System.currentTimeMillis()
+        }
+    }
+    Column {
+        for (m in lastRound(game)) {
+            val mine = m.seat == game.mySeat
+            val who = if (mine) "Toi" else game.players[m.seat].nickname
+            val verdict = analysis?.takeIf { mine && it.move.moveNumber == m.moveNumber }?.verdict
+            Text(
+                buildAnnotatedString {
+                    append("${ago(now - m.playedAt)} · $who · ${m.summary()}")
+                    if (verdict != null) withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append(" · $verdict") }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun MoveView.summary(): String = when (type) {
+    MoveType.PLAY -> "${words.first().word} +$score" + (if (end == GameEnd.OUT) " (+${endAdjustments[seat]} de bonus de fin)" else "")
+    MoveType.EXCHANGE -> "échange de $exchangedCount lettre(s)"
+    MoveType.PASS -> if (end == GameEnd.BLOCKED) "passe, partie bloquée" else "passe"
+    MoveType.RESIGN -> "abandon"
+    MoveType.TIMEOUT -> "temps dépassé"
+}
+
+private fun ago(millis: Long): String {
+    val minutes = millis / 60_000
+    return when {
+        minutes < 1 -> "à l'instant"
+        minutes < 60 -> "il y a $minutes min"
+        minutes < 24 * 60 -> "il y a ${minutes / 60} h"
+        else -> "il y a ${minutes / (24 * 60)} j"
+    }
 }
 
 @Composable
@@ -345,7 +387,8 @@ private fun BoardView(
     onDrop: (DragSource, Offset) -> Unit,
 ) {
     val board = Board.fromRows(game.board)
-    val lastMove = game.moves.lastOrNull()?.tiles.orEmpty().map { it.row to it.col }.toSet()
+    // The moves the other players made since the player's own last move.
+    val lastMove = lastRound(game).filter { it.seat != game.mySeat }.flatMap { it.tiles }.map { it.row to it.col }.toSet()
     Column(Modifier.fillMaxWidth().aspectRatio(1f).dropTargetBounds { drag.boardBounds = it }) {
         for (r in 0 until board.size) {
             Row(Modifier.weight(1f)) {

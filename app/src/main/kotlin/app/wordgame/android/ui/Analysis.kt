@@ -52,6 +52,16 @@ data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val befor
     }
     val bestScore get() = best.firstOrNull()?.score ?: 0
     val wasBest get() = move.type == MoveType.PLAY && move.score >= bestScore
+
+    /**
+     * Shown under the player's last move: only the best possible score, not the word, which could
+     * still be played. The moves themselves are shown in the end-of-game analysis.
+     */
+    val verdict: String get() = when {
+        best.isEmpty() -> "aucun mot n'était possible"
+        wasBest -> "c'était le meilleur coup !"
+        else -> "meilleur coup : $bestScore points"
+    }
 }
 
 /**
@@ -73,21 +83,6 @@ suspend fun analyse(game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boole
     }
 
 private fun Candidate.label() = "${words.joinToString { it.word }} : $score pts" + if (tiles.any { it.blank }) " (joker)" else ""
-
-/**
- * Line under the board after the player's last move: only the best possible score, not the word, which could
- * still be played. The moves themselves are shown in the end-of-game analysis.
- */
-@Composable
-fun LastMoveAnalysisText(analysis: MoveAnalysis, modifier: Modifier = Modifier) {
-    val best = analysis.best.firstOrNull()
-    val text = when {
-        best == null -> "Ton coup : ${analysis.played} · aucun mot n'était possible"
-        analysis.wasBest -> "Ton coup : ${analysis.played} · c'était le meilleur coup !"
-        else -> "Ton coup : ${analysis.played} · meilleur coup : ${best.score} points"
-    }
-    Text(text, modifier, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2)
-}
 
 /** The board before a move, with [tiles] (the move played or a better one) highlighted. */
 @Composable
