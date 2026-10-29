@@ -52,10 +52,11 @@ fun unseenTiles(game: GameView): Map<Char, Int> {
 
 /** Outlined bag with the number of tiles left in it. */
 @Composable
-fun BagButton(bagCount: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+/** Number of tiles left; [onClick] (shows the bag's contents) is null when the contents must stay hidden. */
+fun BagButton(bagCount: Int, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.primary
     Box(
-        modifier.size(44.dp).clickable(onClick = onClick).semantics { contentDescription = "$bagCount lettres dans le sac" },
+        modifier.size(44.dp).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).semantics { contentDescription = "$bagCount lettres dans le sac" },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize().padding(2.dp)) {

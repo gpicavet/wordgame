@@ -55,8 +55,9 @@ data class GameUiState(
 
     /** Online: until every player has made a move (same rule as the server). Solo: always. */
     val canDelete get() = game != null && (solo || game.players.indices.any { seat -> !game.players[seat].bot && game.moves.none { it.seat == seat } })
-    /** Hints on the player's turn, only against robots (solo or online): against people they would be cheating. */
-    val hintsAllowed get() = myTurn && (solo || game!!.players.indices.all { it == game.mySeat || game.players[it].bot })
+    /** Alone against robots (solo or online): hints and the bag's contents, which would be cheating against people. */
+    val againstRobots get() = game != null && (solo || game.players.indices.all { it == game.mySeat || game.players[it].bot })
+    val hintsAllowed get() = myTurn && againstRobots
     fun tentativeAt(row: Int, col: Int) = tentative.firstOrNull { it.placement.row == row && it.placement.col == col }
     fun isUsed(rackIndex: Int) = tentative.any { it.rackIndex == rackIndex }
 }

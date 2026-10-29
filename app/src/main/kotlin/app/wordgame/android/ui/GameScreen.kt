@@ -165,7 +165,8 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                 BoardView(game, state, rules, drag, onTap = vm::tapSquare, onDrop = onDrop)
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(statusLine(game, state), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    BagButton(game.bagCount, onClick = { showUnseen = true })
+                    Text(GameLanguage.of(rules.language).flag, Modifier.padding(end = 8.dp), fontSize = 22.sp)
+                    BagButton(game.bagCount, onClick = if (state.againstRobots) ({ showUnseen = true }) else null)
                     // Game actions next to the bag, where the player's eyes already are.
                     val actionsEnabled = state.myTurn || state.canDelete
                     OutlinedButton(
@@ -212,7 +213,6 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     } else {
                         OutlinedButton(onClick = vm::shuffle) { Text("Mélanger") }
                     }
-                    if (state.hintsAllowed) OutlinedButton(onClick = { showHints = true }) { Text("Indice") }
                 }
             }
             if (drag.source != null) {
@@ -243,6 +243,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
         GameActionsDialog(
             state,
             onDismiss = { menuOpen = false },
+            onHints = { menuOpen = false; showHints = true },
             onExchange = { menuOpen = false; exchanging = true },
             onPass = { menuOpen = false; vm.pass() },
             onResign = { menuOpen = false; confirmResign = true },
@@ -549,6 +550,7 @@ private fun RackView(
 private fun GameActionsDialog(
     state: GameUiState,
     onDismiss: () -> Unit,
+    onHints: () -> Unit,
     onExchange: () -> Unit,
     onPass: () -> Unit,
     onResign: () -> Unit,
@@ -559,6 +561,7 @@ private fun GameActionsDialog(
         title = { Text("Actions") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state.hintsAllowed) OutlinedButton(onClick = onHints, modifier = Modifier.fillMaxWidth()) { Text("Indices") }
                 if (state.myTurn) {
                     OutlinedButton(onClick = onExchange, modifier = Modifier.fillMaxWidth()) { Text("Échanger des lettres") }
                     OutlinedButton(onClick = onPass, modifier = Modifier.fillMaxWidth()) { Text("Passer mon tour") }
