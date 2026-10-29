@@ -162,6 +162,10 @@ fun Application.wordgame(service: GameService) {
                     service.deleteGame(call.user(), call.parameters["id"]!!)
                     call.respond(HttpStatusCode.NoContent)
                 }
+                post("/games/{id}/hints") {
+                    service.recordHint(call.user(), call.parameters["id"]!!)
+                    call.respond(HttpStatusCode.NoContent)
+                }
                 post("/games/{id}/moves") {
                     call.respond(service.move(call.user(), call.parameters["id"]!!, call.receive<MoveRequest>()))
                 }

@@ -32,6 +32,8 @@ interface GameBackend {
     suspend fun load(): GameView
     suspend fun move(game: GameView, action: Action): GameView
     suspend fun delete()
+    /** The player asked for hints on this turn, for their stats (only online games have stats). */
+    suspend fun recordHint() {}
 }
 
 class ServerBackend(private val api: ApiClient, private val gameId: String) : GameBackend {
@@ -39,6 +41,7 @@ class ServerBackend(private val api: ApiClient, private val gameId: String) : Ga
     override suspend fun load() = api.game(gameId)
     override suspend fun move(game: GameView, action: Action) = api.move(game, action)
     override suspend fun delete() = api.deleteGame(gameId)
+    override suspend fun recordHint() = api.recordHint(gameId)
 }
 
 /**

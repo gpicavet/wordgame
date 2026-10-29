@@ -124,6 +124,8 @@ data class FinishedGame(
     val opponentScore: Int,
     val result: GameResult,
     val finishedAt: Long,
+    /** Turns where the player asked for hints. */
+    val hints: Int = 0,
 )
 
 @Serializable
@@ -151,4 +153,6 @@ data class PlayerStats(
     /** Oldest first. */
     val history: List<FinishedGame>,
     val opponents: List<OpponentRecord>,
+    /** Turns where the player asked for hints, finished or active games. */
+    val hintTurns: Int = 0,
 )

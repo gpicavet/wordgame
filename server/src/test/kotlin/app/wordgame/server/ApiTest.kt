@@ -355,6 +355,29 @@ class ApiTest {
     }
 
     @Test
+    fun hintsAreCountedOncePerTurnAndOnlyAgainstRobots() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        suspend fun hint(token: String, id: String) = client.post("/api/v1/games/$id/hints") { bearerAuth(token) }.status
+        val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono"))).body()
+        assertEquals(HttpStatusCode.NoContent, hint(alice.token, game.id))
+        assertEquals(HttpStatusCode.NoContent, hint(alice.token, game.id))
+        // The robot passes: a new turn, a new hint.
+        client.play(alice.token, game, Action.Pass)
+        assertEquals(HttpStatusCode.NoContent, hint(alice.token, game.id))
+        assertEquals(HttpStatusCode.NotFound, hint(bob.token, game.id))
+        client.play(alice.token, client.view(alice.token, game.id), Action.Resign)
+        assertEquals(HttpStatusCode.Conflict, hint(alice.token, game.id))
+
+        val versus: GameView = client.create(alice.token, CreateGameRequest("bob")).body()
+        assertEquals(HttpStatusCode.Forbidden, hint(alice.token, versus.id))
+
+        val stats: PlayerStats = client.get("/api/v1/me/stats") { bearerAuth(alice.token) }.body()
+        assertEquals(2, stats.hintTurns)
+        assertEquals(listOf(2), stats.history.map { it.hints })
+    }
+
+    @Test
     fun gameInEnglish() = withApp(listOf(passingBot)) { client, _ ->
         val alice = client.register("alice")
         val game: GameView = client.create(alice.token, CreateGameRequest(bots = listOf("nono"), language = "en")).body()

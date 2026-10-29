@@ -182,6 +182,10 @@ class ApiClient(private val session: Session) {
         http.delete("/api/v1/games/$id") { auth() }.result<Unit>()
     }
 
+    suspend fun recordHint(id: String) {
+        http.post("/api/v1/games/$id/hints") { auth() }.result<Unit>()
+    }
+
     suspend fun matchmake(language: String): MatchmakingResponse =
         http.post("/api/v1/matchmaking") { auth(); url.parameters.append("language", language) }.result()
 

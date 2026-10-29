@@ -78,6 +78,12 @@ class Database(path: String) : AutoCloseable {
             """CREATE TABLE IF NOT EXISTS matchmaking (
                 user_id TEXT PRIMARY KEY REFERENCES users(id),
                 queued_at INTEGER NOT NULL)""",
+            // Turns where the player asked for hints (games against robots only), counted in their stats.
+            """CREATE TABLE IF NOT EXISTS hints (
+                game_id TEXT NOT NULL REFERENCES games(id),
+                user_id TEXT NOT NULL REFERENCES users(id),
+                move_number INTEGER NOT NULL,
+                PRIMARY KEY (game_id, user_id, move_number))""",
         )
         val MIGRATIONS = listOf(
             "ALTER TABLE matchmaking ADD COLUMN language TEXT NOT NULL DEFAULT 'fr'",

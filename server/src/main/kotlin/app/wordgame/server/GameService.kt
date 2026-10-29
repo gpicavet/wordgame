@@ -124,6 +124,7 @@ class GameService(
         val finished = ArrayList<FinishedGame>()
         val myMoves = ArrayList<Pair<MoveRecord, Pair<String, Long>>>() // move, (opponent, playedAt)
         var active = 0
+        var hintTurns = 0
         for (id in ids) {
             val game = load(id)
             if (language != null && game.state.language != language) continue
@@ -133,6 +134,8 @@ class GameService(
             query("SELECT record, played_at FROM moves WHERE game_id = ?", id) {
                 ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)) to it.getLong(2)
             }.filter { it.first.seat == seat }.forEach { (record, at) -> myMoves += record to (opponent to at) }
+            val hints = query("SELECT COUNT(*) FROM hints WHERE game_id = ? AND user_id = ?", id, user.id) { it.getInt(1) }.single()
+            hintTurns += hints
             if (state.status != GameStatus.FINISHED) {
                 active++
                 continue
@@ -149,6 +152,7 @@ class GameService(
                     else -> GameResult.LOSS
                 },
                 finishedAt = finishedAt,
+                hints = hints,
             )
         }
         finished.sortBy { it.finishedAt }
@@ -177,6 +181,7 @@ class GameService(
                     games.count { it.result == GameResult.DRAW },
                 )
             }.sortedByDescending { it.wins + it.losses + it.draws },
+            hintTurns = hintTurns,
         )
     }
 
@@ -251,11 +256,25 @@ class GameService(
             throw ApiException(HttpStatusCode.Conflict, "GAME_STARTED", "Tous les joueurs ont déjà joué")
         }
         update("DELETE FROM moves WHERE game_id = ?", gameId)
+        update("DELETE FROM hints WHERE game_id = ?", gameId)
         update("DELETE FROM game_players WHERE game_id = ?", gameId)
         update("DELETE FROM games WHERE id = ?", gameId)
     }
 
     suspend fun view(user: User, gameId: String): GameView = db.tx { view(load(gameId), user) }
+
+    /** The player asked for hints on their turn: counted once per turn. Only against robots, as the app allows. */
+    suspend fun recordHint(user: User, gameId: String) = db.tx {
+        val game = load(gameId)
+        val seat = game.seatOf(user)
+        if (game.seats.indices.any { it != seat && game.seats[it].bot == null }) {
+            throw ApiException(HttpStatusCode.Forbidden, "HINTS_AGAINST_PEOPLE", "Pas d'indices contre d'autres joueurs")
+        }
+        if (game.state.status != GameStatus.ACTIVE || game.state.currentPlayer != seat) {
+            throw ApiException(HttpStatusCode.Conflict, "NOT_YOUR_TURN", "Ce n'est pas ton tour")
+        }
+        update("INSERT OR IGNORE INTO hints (game_id, user_id, move_number) VALUES (?, ?, ?)", gameId, user.id, game.state.moveNumber)
+    }
 
     suspend fun move(user: User, gameId: String, request: MoveRequest): GameView = db.tx {
         val game = load(gameId)

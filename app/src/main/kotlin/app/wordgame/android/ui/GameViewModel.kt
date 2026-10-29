@@ -11,6 +11,7 @@ import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
 import app.wordgame.engine.Evaluation
 import app.wordgame.engine.GameStatus
+import app.wordgame.engine.Hints
 import app.wordgame.engine.MoveEvaluator
 import app.wordgame.engine.Placement
 import app.wordgame.engine.Refusals
@@ -19,9 +20,11 @@ import app.wordgame.engine.Lexicon
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.GameView
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** A rack tile put on the board but not sent yet. */
 data class Tentative(val rackIndex: Int, val placement: Placement)
@@ -52,6 +55,8 @@ data class GameUiState(
 
     /** Online: until every player has made a move (same rule as the server). Solo: always. */
     val canDelete get() = game != null && (solo || game.players.indices.any { seat -> !game.players[seat].bot && game.moves.none { it.seat == seat } })
+    /** Hints on the player's turn, only against robots (solo or online): against people they would be cheating. */
+    val hintsAllowed get() = myTurn && (solo || game!!.players.indices.all { it == game.mySeat || game.players[it].bot })
     fun tentativeAt(row: Int, col: Int) = tentative.firstOrNull { it.placement.row == row && it.placement.col == col }
     fun isUsed(rackIndex: Int) = tentative.any { it.rackIndex == rackIndex }
 }
@@ -97,6 +102,17 @@ class GameViewModel(
     }
 
     suspend fun lexicon(): Lexicon = lexiconLoaded.await()
+
+    /** Scrabbles of the player's rack and best possible score, for the hint button of games against robots (computed on the phone). */
+    suspend fun hints(): Hints? {
+        val game = state.value.game ?: return null
+        // Counted even if the player closes the window before the result: they asked.
+        viewModelScope.launch { attempt { backend.recordHint() } }
+        val rules = RuleSet.byId(game.rulesId)
+        val lex = lexicon()
+        val common = dictionary.common(rules.language)
+        return withContext(Dispatchers.Default) { Hints.of(Board.fromRows(game.board), game.rack, rules, lex, common) }
+    }
 
     suspend fun refresh() {
         attempt { backend.load() }

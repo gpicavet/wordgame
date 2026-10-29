@@ -112,6 +112,17 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
                 StatTile("Scrabbles", "${stats.bingos}", "7 lettres posées")
             }
         }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val helped = stats.history.count { it.hints > 0 }
+                StatTile("Indices", "${stats.hintTurns}", if (stats.hintTurns == 1) "tour aidé" else "tours aidés")
+                StatTile(
+                    "Sans indice",
+                    "${stats.history.count { it.result == GameResult.WIN && it.hints == 0 }}",
+                    "victoires sur ${stats.finishedGames - helped} parties",
+                )
+            }
+        }
 
         item { SectionTitle("Progression") }
         item {
@@ -168,7 +179,7 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
             items(stats.history.reversed(), key = { it.gameId }) { g ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(DATE.format(Instant.ofEpochMilli(g.finishedAt)), Modifier.weight(0.25f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(g.opponent, Modifier.weight(0.35f))
+                    Text(if (g.hints > 0) "${g.opponent} 💡${g.hints}" else g.opponent, Modifier.weight(0.35f))
                     Text("${g.myScore} – ${g.opponentScore}", Modifier.weight(0.25f))
                     Text(resultLabel(g.result), Modifier.weight(0.15f), fontWeight = FontWeight.Bold)
                 }

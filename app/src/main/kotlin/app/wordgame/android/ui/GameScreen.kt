@@ -100,6 +100,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     LaunchedEffect(Unit) { lexicon = vm.lexicon() }
     var reviewShown by remember { mutableStateOf(false) }
     var exchanging by remember { mutableStateOf(false) }
+    var showHints by remember { mutableStateOf(false) }
 
     LaunchedEffect(gameId) { Push.gameUpdates.collect { if (it == gameId) vm.refresh() } }
 
@@ -211,6 +212,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     } else {
                         OutlinedButton(onClick = vm::shuffle) { Text("Mélanger") }
                     }
+                    if (state.hintsAllowed) OutlinedButton(onClick = { showHints = true }) { Text("Indice") }
                 }
             }
             if (drag.source != null) {
@@ -258,6 +260,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     val analysis = state.lastMoveAnalysis
     val review = analysis?.review
     if (reviewShown && analysis != null && review != null) MoveReviewDialog(analysis, review, onDismiss = { reviewShown = false })
+    if (showHints) HintsDialog(load = vm::hints, onDismiss = { showHints = false })
     if (showUnseen) state.game?.let { UnseenTilesDialog(it, onDismiss = { showUnseen = false }) }
     if (confirmDelete) {
         AlertDialog(
