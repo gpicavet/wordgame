@@ -61,6 +61,7 @@ class MoveReviewTest {
                     )
                     grades += review.grade
                     review.tips.forEach { tips.merge(it.kind, 1, Int::plus) }
+                    assertEquals(-review.loss, review.criteria.sumOf { it.second }, 1e-6)
                 }
                 state = outcome.state
             }

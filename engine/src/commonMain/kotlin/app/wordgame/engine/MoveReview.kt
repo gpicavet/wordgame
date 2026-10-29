@@ -1,5 +1,6 @@
 package app.wordgame.engine
 
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
@@ -23,13 +24,33 @@ enum class TipKind {
     ENDGAME_LEAVE,
 }
 
+/** The parts of the equity, as BelzéBot sees them. */
+enum class Criterion {
+    /** Points scored by the move itself. */
+    SCORE,
+    /** Letters kept on the rack. */
+    LEAVE,
+    /** Premium squares and triple-word lanes left to the opponent. */
+    BOARD,
+    /** Tiles drawn from the bag, and letters left when it is empty. */
+    BAG,
+}
+
 /**
  * Grade of a move out of 10, from how much "equity" it gave up: equity = score + BelzéBot's value of the
  * position left (letters kept, premium squares opened, end of game), in points. [loss] is the gap with the
  * best move by equity; the grade falls quickly for small losses, then slowly, so that a missed big move does
- * not always give 0: 5 points lost = 8/10, 10 = 6/10, 20 = 4/10, 40 = 1/10.
+ * not always give 0: 5 points lost = 8/10, 10 = 7/10, 20 = 5/10, 40 = 3/10, 60 = 1/10.
+ * [criteria]: the gap with the best move part by part, in points (negative = worse), largest first;
+ * they add up to -[loss].
  */
-class MoveReview(val grade: Int, val loss: Double, val bestScore: Int, val tips: List<Tip>) {
+class MoveReview(
+    val grade: Int,
+    val loss: Double,
+    val bestScore: Int,
+    val tips: List<Tip>,
+    val criteria: List<Pair<Criterion, Double>> = emptyList(),
+) {
 
     companion object {
         /** Candidates looked at: the highest-scoring moves, as BelzéBot does with a larger margin. */
@@ -59,7 +80,7 @@ class MoveReview(val grade: Int, val loss: Double, val bestScore: Int, val tips:
             if (best == null || best.third <= myEquity) return MoveReview(10, 0.0, candidates.firstOrNull()?.score ?: score, emptyList())
             val (bestMove, theirs, bestEquity) = best
             val loss = bestEquity - myEquity
-            val grade = (10 * exp(-loss / 20)).roundToInt().coerceIn(0, 10)
+            val grade = (10 * exp(-loss / 30)).roundToInt().coerceIn(0, 10)
 
             // What the move gave up, part by part: positive = worse than the best move.
             fun lost(range: IntRange) = range.sumOf { weights[it] * (theirs[it] - mine[it]) }
@@ -69,6 +90,12 @@ class MoveReview(val grade: Int, val loss: Double, val bestScore: Int, val tips:
             val leaveLost = lost(0..index("q_without_u"))
             val boardLost = lost(index("open_tw")..index("tw_lanes"))
             val endLost = lost(index("endgame_leave_points")..index("endgame_leave_points"))
+            val criteria = listOf(
+                Criterion.SCORE to (score - bestMove.score).toDouble(),
+                Criterion.LEAVE to -leaveLost,
+                Criterion.BOARD to -boardLost,
+                Criterion.BAG to -lost(index("bag")..index("endgame_leave_points")),
+            ).sortedByDescending { abs(it.second) }
 
             val tips = ArrayList<Pair<Double, Tip>>()
             val morePoints = bestMove.score - score
@@ -91,7 +118,7 @@ class MoveReview(val grade: Int, val loss: Double, val bestScore: Int, val tips:
                 tips += boardLost to Tip(if (triple) TipKind.OPENS_TRIPLE_WORD else TipKind.OPENS_PREMIUMS)
             }
             if (endLost >= TIP_THRESHOLD) tips += endLost to Tip(TipKind.ENDGAME_LEAVE)
-            return MoveReview(grade, loss, candidates.first().score, tips.sortedByDescending { it.first }.take(2).map { it.second })
+            return MoveReview(grade, loss, candidates.first().score, tips.sortedByDescending { it.first }.take(2).map { it.second }, criteria)
         }
     }
 }

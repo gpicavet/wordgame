@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wordgame.engine.Board
 import app.wordgame.engine.Candidate
+import app.wordgame.engine.Criterion
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.MoveReview
 import app.wordgame.engine.MoveType
@@ -42,6 +43,8 @@ import app.wordgame.engine.Tip
 import app.wordgame.engine.TipKind
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MoveView
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -166,6 +169,19 @@ fun Tip.text() = when (kind) {
     TipKind.ENDGAME_LEAVE -> "Le sac est vide : place d'abord tes lettres chères, elles comptent contre toi à la fin."
 }
 
+fun Criterion.label() = when (this) {
+    Criterion.SCORE -> "Points marqués"
+    Criterion.LEAVE -> "Lettres gardées"
+    Criterion.BOARD -> "Cases laissées à l'adversaire"
+    Criterion.BAG -> "Tirage et fin de partie"
+}
+
+/** The 3 criteria that weigh most in the grade: "Points marqués : −20", in points against the best move. */
+fun MoveReview.mainCriteria(): List<String> = criteria.take(3).map { (criterion, points) ->
+    val rounded = points.roundToInt()
+    "${criterion.label()} : ${if (rounded > 0) "+" else if (rounded < 0) "−" else ""}${abs(rounded)}"
+}
+
 /** The advice of a review, or praise when there is nothing to say. */
 fun MoveReview.advice(): List<String> = when {
     tips.isNotEmpty() -> tips.map { it.text() }
@@ -183,6 +199,10 @@ fun MoveReviewDialog(analysis: MoveAnalysis, review: MoveReview, onDismiss: () -
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Ton coup : ${analysis.played}", fontWeight = FontWeight.Bold)
                 review.advice().forEach { Text(it) }
+                if (review.criteria.isNotEmpty()) {
+                    Text("Écart avec le meilleur coup, en points :", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    review.mainCriteria().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                }
                 if (analysis.best.isNotEmpty()) Text("Meilleur score possible : ${analysis.bestScore} points", style = MaterialTheme.typography.bodySmall)
                 Text(
                     "La note compare ton coup au meilleur selon BelzéBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l'adversaire.",
@@ -249,6 +269,7 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, coachWeights: DoubleArr
                                         a.review?.let { r ->
                                             Text("Note : ${r.grade}/10 · ${r.label()}", fontWeight = FontWeight.Bold)
                                             r.advice().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                            if (r.criteria.isNotEmpty()) Text(r.mainCriteria().joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
