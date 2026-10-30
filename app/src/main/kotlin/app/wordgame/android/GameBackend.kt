@@ -11,6 +11,7 @@ import app.wordgame.engine.GameStatus
 import app.wordgame.engine.MoveOutcome
 import app.wordgame.engine.MoveRecord
 import app.wordgame.engine.RuleSet
+import app.wordgame.engine.SimBot
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.GameView
@@ -50,6 +51,7 @@ class ServerBackend(private val api: ApiClient, private val gameId: String) : Ga
  */
 enum class SoloBot(val gameId: String, val displayName: String, val level: String, val file: String, val serverLevel: String) {
     NONO("solo", "NonoBot", "débutant", "solo.json", "nono"),
+    IRO("solo-iro", "IroBot", "confirmé", "solo-iro.json", "iro"),
     BELZE("solo-belze", "BelzéBot", "expert", "solo-belze.json", "belze"),
 }
 
@@ -66,7 +68,8 @@ data class SoloSummary(val myScore: Int, val botScore: Int, val myTurn: Boolean,
  * One solo game against [bot] in [language], saved in a file on the phone (French keeps the original names). Same rules engine as the server.
  * The player is seat 0. The bot plays when the game is loaded and it is its turn.
  * - NonoBot: [BeginnerBot] (everyday words, not always the best move);
- * - BelzéBot: [ValueBot] with the weights learned by self-play in the game's language, everyday words too.
+ * - IroBot: [ValueBot] with the weights learned by self-play in the game's language, everyday words too;
+ * - BelzéBot: the same weights in a [SimBot], which also tries the opponent's possible replies.
  */
 class SoloStore(
     context: Context,
@@ -135,7 +138,9 @@ class SoloStore(
         val common = dictionary.common(language)
         val action = when (bot) {
             SoloBot.NONO -> BeginnerBot(lexicon, common, random).play(game.state, 1)
-            SoloBot.BELZE -> ValueBot(lexicon, dictionary.expertWeights(language), random, vocabulary = common)
+            SoloBot.IRO -> ValueBot(lexicon, dictionary.expertWeights(language), random, vocabulary = common)
+                .decide(game.state, 1, bingoAllowed(game.moves.map { it.record }, 1, random)).action
+            SoloBot.BELZE -> SimBot(lexicon, dictionary.expertWeights(language), random, vocabulary = common)
                 .decide(game.state, 1, bingoAllowed(game.moves.map { it.record }, 1, random)).action
         }
         val outcome = Game.apply(game.state, 1, action, lexicon.words, random)

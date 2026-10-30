@@ -79,7 +79,7 @@ val GameView.coached get() = players.size == 2 && players[1 - mySeat].bot
 /**
  * Replays the game to get the board before each of [seat]'s moves and runs the solver on the rack they had.
  * Moves played before racks were recorded have no rack: they are skipped.
- * With [coachWeights] (BelzéBot's), plays and passes also get a [MoveReview].
+ * With [coachWeights] (IroBot's), plays and passes also get a [MoveReview].
  */
 suspend fun analyse(
     game: GameView, lexicon: Lexicon, seat: Int, onlyLast: Boolean = false, coachWeights: DoubleArray? = null,
@@ -205,7 +205,7 @@ fun MoveReviewDialog(analysis: MoveAnalysis, review: MoveReview, onDismiss: () -
                 }
                 if (analysis.best.isNotEmpty()) Text("Meilleur score possible : ${analysis.bestScore} points", style = MaterialTheme.typography.bodySmall)
                 Text(
-                    "La note compare ton coup au meilleur selon BelzéBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l'adversaire.",
+                    "La note compare ton coup au meilleur selon IroBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l'adversaire.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

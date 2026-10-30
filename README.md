@@ -57,7 +57,7 @@ Quand un mot est refusé, l'application en donne la raison : nom propre, abrévi
 - **en français**, il s'agit des entrées Grammalecte écartées par les filtres ci-dessus ;
 - **en anglais**, des noms propres, abréviations et contractions des listes SCOWL, ainsi que des mots SCOWL de taille 70 au plus qui manquent à ENABLE.
 
-La langue est choisie à la création de la partie (`language` : `fr` ou `en`) ; le serveur refuse l'anglais si `WORDGAME_EN_DICT` est absent. En anglais, BelzéBot utilise ses poids appris sur des parties anglaises (`models/value-en-v1.txt`, `trainer --language=en train …`).
+La langue est choisie à la création de la partie (`language` : `fr` ou `en`) ; le serveur refuse l'anglais si `WORDGAME_EN_DICT` est absent. En anglais, IroBot et BelzéBot utilisent les poids appris sur des parties anglaises (`models/value-en-v1.txt`, `trainer --language=en train …`).
 
 ## Règles
 

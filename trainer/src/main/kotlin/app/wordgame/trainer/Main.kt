@@ -16,6 +16,7 @@ import app.wordgame.engine.MoveType
 import app.wordgame.engine.NeuralBot
 import app.wordgame.engine.RawAfterstate
 import app.wordgame.engine.RuleSet
+import app.wordgame.engine.SimBot
 import app.wordgame.engine.ValueBot
 import app.wordgame.engine.bingoAllowed
 import kotlinx.coroutines.Dispatchers
@@ -81,16 +82,25 @@ private fun greedy(random: Random): Player {
     return { s, seat, _ -> bot.decide(s, seat) }
 }
 
-/** [heldBack]: scrabbles only played sometimes, as by Belzé-bot in the app (see [bingoAllowed]). */
+/** [heldBack]: scrabbles only played sometimes, as by the robots in the app (see [bingoAllowed]). */
 private fun valueBot(weights: DoubleArray, random: Random, epsilon: Double = 0.0, heldBack: Boolean = false): Player {
     val bot = ValueBot(lexicon, weights, random, epsilon = epsilon, vocabulary = common)
     return { s, seat, history -> bot.decide(s, seat, !heldBack || bingoAllowed(history, seat, random)) }
 }
 
-/** Belzé-bot as in the app: learned weights, common vocabulary, scrabbles held back. */
-private fun belze(weights: DoubleArray, random: Random): Player {
+/** Iro-bot as in the app: learned weights, common vocabulary, scrabbles held back. */
+private fun iro(weights: DoubleArray, random: Random): Player {
     val bot = ValueBot(lexicon, weights, random, vocabulary = common)
     return { s, seat, history -> bot.decide(s, seat, bingoAllowed(history, seat, random)) }
+}
+
+/** Iro-bot: Iro-bot looking one move ahead ([SimBot]), at full strength; [timer] adds up its thinking time. */
+private fun simBot(weights: DoubleArray, random: Random, candidates: Int, racks: Int, timer: LongArray? = null): Player {
+    val bot = SimBot(lexicon, weights, random, candidates, racks, vocabulary = common)
+    return { s, seat, _ ->
+        val start = System.nanoTime()
+        bot.decide(s, seat).also { timer?.let { t -> synchronized(t) { t[0] += System.nanoTime() - start; t[1]++ } } }
+    }
 }
 
 private fun greedyCommon(random: Random): Player {
@@ -289,19 +299,29 @@ fun main(arguments: Array<String>) {
             val n = args.getOrElse(2) { "1000" }.toInt()
             match("Bot entraîné contre glouton (même vocabulaire courant)", n, { r -> valueBot(w, r) }, ::greedyCommon)
             match("Bot entraîné contre Nono-bot débutant", n, { r -> valueBot(w, r) }, ::beginner)
-            match("Belzé-bot (scrabbles freinés) contre Nono-bot débutant", n, { r -> belze(w, r) }, ::beginner)
-            match("Belzé-bot (scrabbles freinés) contre glouton", n, { r -> belze(w, r) }, ::greedyCommon)
+            match("Iro-bot (scrabbles freinés) contre Nono-bot débutant", n, { r -> iro(w, r) }, ::beginner)
+            match("Iro-bot (scrabbles freinés) contre glouton", n, { r -> iro(w, r) }, ::greedyCommon)
             args.getOrNull(3)?.let { other ->
                 val previous = load(File(other))
-                match("Belzé-bot contre Belzé-bot $other", n, { r -> belze(w, r) }, { r -> belze(previous, r) })
+                match("Iro-bot contre Iro-bot $other", n, { r -> iro(w, r) }, { r -> iro(previous, r) })
             }
+        }
+        // sim <weights> <games> [candidates] [racks]: Belzé-bot against Iro-bot, both at full strength.
+        "sim" -> {
+            val w = load(File(args[1]))
+            val n = args[2].toInt()
+            val candidates = args.getOrElse(3) { "6" }.toInt()
+            val racks = args.getOrElse(4) { "16" }.toInt()
+            val timer = LongArray(2)
+            match("Simulation ($candidates coups × $racks tirages) contre Iro-bot", n, { r -> simBot(w, r, candidates, racks, timer) }, { r -> valueBot(w, r) })
+            println("  %.2f s par coup en moyenne (sur un cœur)".format(timer[0] / 1e9 / timer[1]))
         }
         "show" -> {
             val w = load(File(args[1]))
             val seed = args.getOrElse(2) { "1" }.toLong()
             val r = Random(seed)
-            show(listOf("Belzé", "Nono"), listOf(belze(w, r), beginner(r)), seed)
-            show(listOf("Belzé-1", "Belzé-2"), listOf(belze(w, r), belze(w, r)), seed + 1)
+            show(listOf("Iro", "Nono"), listOf(iro(w, r), beginner(r)), seed)
+            show(listOf("Iro-1", "Iro-2"), listOf(iro(w, r), iro(w, r)), seed + 1)
         }
         // trainnet <games> <out> [--lambda=0.7] [--resume=net.bin]
         "trainnet" -> {
@@ -312,13 +332,13 @@ fun main(arguments: Array<String>) {
             val net = Mlp.fromBytes(File(args[1]).readBytes())
             val w = load(File(args.getOrElse(3) { "models/value-v2.txt" }))
             val n = args.getOrElse(2) { "400" }.toInt()
-            match("Réseau contre Belzé-bot", n, { r -> neural(net, r) }, { r -> belze(w, r) })
+            match("Réseau contre Iro-bot", n, { r -> neural(net, r) }, { r -> iro(w, r) })
             match("Réseau contre Nono-bot débutant", n, { r -> neural(net, r) }, ::beginner)
             args.getOrNull(4)?.let { other ->
                 val previous = Mlp.fromBytes(File(other).readBytes())
                 match("Réseau contre $other", n, { r -> neural(net, r) }, { r -> neural(previous, r) })
             }
         }
-        else -> println("usage: [--language=en] baseline [games] | train <games> <out> | eval <weights> [games] [other weights] | trainnet <games> <out.bin> [--lambda=x] [--resume=net.bin] | evalnet <net.bin> [games] [belze weights] [other net.bin]")
+        else -> println("usage: [--language=en] baseline [games] | train <games> <out> | eval <weights> [games] [other weights] | trainnet <games> <out.bin> [--lambda=x] [--resume=net.bin] | evalnet <net.bin> [games] [iro weights] [other net.bin] | sim <weights> <games> [candidates] [racks]")
     }
 }

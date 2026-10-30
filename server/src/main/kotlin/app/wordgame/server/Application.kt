@@ -69,7 +69,7 @@ fun main() {
     val enPath = env["WORDGAME_EN_DICT"] ?: "dictionaries/bin/en-enable.dawg"
     val english = File(enPath).takeIf { it.exists() }?.let { Dawg.fromBytes(it.readBytes()) }
     log.info("English dictionary {}: {}", enPath, english?.let { "${it.edgeCount} edges" } ?: "absent")
-    // Robots for games with friends: they need the everyday vocabulary and BelzéBot's weights.
+    // Robots for games with friends: they need the everyday vocabulary and the learned weights.
     val commonPath = env["WORDGAME_COMMON_DICT"] ?: "dictionaries/bin/fr-courant.dawg"
     val enCommonPath = env["WORDGAME_EN_COMMON_DICT"] ?: "dictionaries/bin/en-courant.dawg"
     val weightsPath = env["WORDGAME_BOT_WEIGHTS"] ?: "models/value-v2.txt"

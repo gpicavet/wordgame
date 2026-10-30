@@ -89,7 +89,7 @@ class GameViewModel(
         }
     }
 
-    /** BelzéBot's weights in games against one robot, to grade the player's moves; null otherwise. */
+    /** IroBot's weights in games against one robot, to grade the player's moves; null otherwise. */
     suspend fun coachWeights(game: GameView): DoubleArray? =
         if (game.coached) dictionary.expertWeights(RuleSet.byId(game.rulesId).language) else null
 

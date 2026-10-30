@@ -101,7 +101,7 @@ class DictionaryLoader(private val context: Context) {
         }.also { refusals[language] = it }
     }
 
-    /** BelzéBot's weights learned on games in [language] (models/value-v2.txt, models/value-en-v1.txt). */
+    /** IroBot's and BelzéBot's weights learned on games in [language] (models/value-v2.txt, models/value-en-v1.txt). */
     suspend fun expertWeights(language: String): DoubleArray = mutex.withLock {
         experts[language] ?: withContext(Dispatchers.IO) {
             val file = if (language == "en") "value-en-v1.txt" else "value-v2.txt"

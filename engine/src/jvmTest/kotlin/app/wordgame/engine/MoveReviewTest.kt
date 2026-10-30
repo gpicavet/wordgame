@@ -11,8 +11,8 @@ class MoveReviewTest {
     private val weights = Afterstate.parseWeights(File("../models/value-v2.txt").readText())
 
     @Test
-    fun belzeGetsTopGradesAndTheGreedyBotLess() {
-        val belze = ValueBot(lexicon, weights, Random(1))
+    fun iroGetsTopGradesAndTheGreedyBotLess() {
+        val iro = ValueBot(lexicon, weights, Random(1))
         val greedy = ValueBot(lexicon, DoubleArray(Afterstate.size), Random(2))
         val grades = mapOf(0 to ArrayList<Int>(), 1 to ArrayList())
         val tips = HashMap<TipKind, Int>()
@@ -20,7 +20,7 @@ class MoveReviewTest {
             var state = Game.new(RuleSet.CLASSIC, 2, Random(g))
             while (state.status == GameStatus.ACTIVE) {
                 val seat = state.currentPlayer
-                val decision = (if (seat == 0) belze else greedy).decide(state, seat)
+                val decision = (if (seat == 0) iro else greedy).decide(state, seat)
                 val action = decision.action
                 if (action is Action.Play) {
                     val review = MoveReview.of(
@@ -33,12 +33,12 @@ class MoveReviewTest {
                 state = (Game.apply(state, seat, action, lexicon.words, Random(g)) as MoveOutcome.Applied).state
             }
         }
-        val belzeAverage = grades.getValue(0).average()
+        val iroAverage = grades.getValue(0).average()
         val greedyAverage = grades.getValue(1).average()
-        println("BelzéBot ${"%.2f".format(belzeAverage)}, greedy ${"%.2f".format(greedyAverage)} " +
+        println("IroBot ${"%.2f".format(iroAverage)}, greedy ${"%.2f".format(greedyAverage)} " +
             "${grades.getValue(1).groupingBy { it }.eachCount().toSortedMap()}, tips $tips")
-        assertTrue(belzeAverage > 9.5, "BelzéBot: $belzeAverage")
-        assertTrue(greedyAverage < belzeAverage - 0.3, "greedy: $greedyAverage")
+        assertTrue(iroAverage > 9.5, "IroBot: $iroAverage")
+        assertTrue(greedyAverage < iroAverage - 0.3, "greedy: $greedyAverage")
     }
 
     @Test

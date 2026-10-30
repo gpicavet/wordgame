@@ -24,7 +24,7 @@ enum class TipKind {
     ENDGAME_LEAVE,
 }
 
-/** The parts of the equity, as BelzéBot sees them. */
+/** The parts of the equity, as IroBot sees them. */
 enum class Criterion {
     /** Points scored by the move itself. */
     SCORE,
@@ -37,7 +37,7 @@ enum class Criterion {
 }
 
 /**
- * Grade of a move out of 10, from how much "equity" it gave up: equity = score + BelzéBot's value of the
+ * Grade of a move out of 10, from how much "equity" it gave up: equity = score + IroBot's value of the
  * position left (letters kept, premium squares opened, end of game), in points. [loss] is the gap with the
  * best move by equity; the grade falls quickly for small losses, then slowly, so that a missed big move does
  * not always give 0: 5 points lost = 8/10, 10 = 7/10, 20 = 5/10, 40 = 3/10, 60 = 1/10.
@@ -53,7 +53,7 @@ class MoveReview(
 ) {
 
     companion object {
-        /** Candidates looked at: the highest-scoring moves, as BelzéBot does with a larger margin. */
+        /** Candidates looked at: the highest-scoring moves, as IroBot does with a larger margin. */
         private const val CANDIDATES = 100
         /** Below this gap in points, a part of the equity is not worth a tip. */
         private const val TIP_THRESHOLD = 3.0
