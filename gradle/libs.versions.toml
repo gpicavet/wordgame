@@ -11,6 +11,9 @@ activity-compose = "1.10.1"
 lifecycle = "2.9.1"
 firebase-bom = "33.7.0"
 google-services = "4.4.2"
+nimbus-jose-jwt = "9.47"
+credentials = "1.5.0"
+googleid = "1.1.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -31,6 +34,10 @@ ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negoti
 
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+nimbus-jose-jwt = { module = "com.nimbusds:nimbus-jose-jwt", version.ref = "nimbus-jose-jwt" }
+credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
+credentials-play-services = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
+googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-ui = { module = "androidx.compose.ui:ui" }

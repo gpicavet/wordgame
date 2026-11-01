@@ -12,6 +12,7 @@ import app.wordgame.protocol.CreateGameRequest
 import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.GameResult
 import app.wordgame.protocol.GameSummary
+import app.wordgame.protocol.GoogleRequest
 import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
@@ -43,9 +44,16 @@ class ApiTest {
     private val words = WordList { it.length >= 2 && it != "ZZZ" }
     private val dictionaries = mapOf("fr" to words, "en" to words)
 
-    private fun withApp(bots: List<ServerBot> = emptyList(), block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit) {
+    /** Google ID tokens of the tests: "google-<account>" is valid for that Google account, anything else is not. */
+    private val fakeGoogle = GoogleTokens { token -> token.removePrefix("google-").takeIf { it != token } }
+
+    private fun withApp(
+        bots: List<ServerBot> = emptyList(),
+        google: GoogleTokens? = fakeGoogle,
+        block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit,
+    ) {
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
-        val service = GameService(Database(dbFile.path), dictionaries, bots = bots)
+        val service = GameService(Database(dbFile.path), dictionaries, bots = bots, google = google)
         testApplication {
             application { wordgame(service) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
@@ -276,6 +284,70 @@ class ApiTest {
         assertEquals(HttpStatusCode.OK, client.get("/api/v1/games") { bearerAuth(again.token) }.status)
         // Only once: registering the nickname again makes a new account.
         assertTrue(client.register("alice").userId != alice.userId)
+    }
+
+    private suspend fun HttpClient.signInWithGoogle(idToken: String) = post("/api/v1/auth/google") {
+        contentType(ContentType.Application.Json)
+        setBody(GoogleRequest(idToken))
+    }
+
+    private suspend fun HttpClient.linkGoogle(token: String, idToken: String) = post("/api/v1/me/google") {
+        bearerAuth(token)
+        contentType(ContentType.Application.Json)
+        setBody(GoogleRequest(idToken))
+    }
+
+    @Test
+    fun googleFindsTheAccountAgainOnAnotherPhone() = withApp { client, _ ->
+        assertEquals("NO_ACCOUNT", client.signInWithGoogle("google-A").body<ApiError>().code)
+        val alice: AuthResponse = client.post("/api/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("alice", googleIdToken = "google-A"))
+        }.body()
+        assertEquals(true, client.get("/api/v1/me") { bearerAuth(alice.token) }.body<Me>().google)
+
+        val phone2: AuthResponse = client.signInWithGoogle("google-A").body()
+        assertEquals(alice.userId, phone2.userId)
+        assertEquals(alice.tag, phone2.tag)
+        assertTrue(phone2.token != alice.token)
+        // Both phones stay signed in.
+        for (token in listOf(alice.token, phone2.token)) {
+            assertEquals(HttpStatusCode.OK, client.get("/api/v1/games") { bearerAuth(token) }.status)
+        }
+    }
+
+    @Test
+    fun aGoogleAccountIsLinkedToOneAccountAtMost() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        assertEquals(false, client.get("/api/v1/me") { bearerAuth(bob.token) }.body<Me>().google)
+        assertEquals(HttpStatusCode.NoContent, client.linkGoogle(bob.token, "google-B").status)
+        assertEquals(HttpStatusCode.NoContent, client.linkGoogle(bob.token, "google-B").status)
+        assertEquals(bob.userId, client.signInWithGoogle("google-B").body<AuthResponse>().userId)
+        assertEquals("GOOGLE_ALREADY_LINKED", client.linkGoogle(alice.token, "google-B").body<ApiError>().code)
+        val taken = client.post("/api/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("carol", googleIdToken = "google-B"))
+        }
+        assertEquals("GOOGLE_ALREADY_LINKED", taken.body<ApiError>().code)
+        val forged = client.linkGoogle(alice.token, "forged")
+        assertEquals(HttpStatusCode.Unauthorized, forged.status)
+        assertEquals("INVALID_GOOGLE_TOKEN", forged.body<ApiError>().code)
+    }
+
+    @Test
+    fun deletingTheAccountFreesItsGoogleAccount() = withApp { client, _ ->
+        val alice = client.register("alice")
+        client.linkGoogle(alice.token, "google-A")
+        client.delete("/api/v1/me") { bearerAuth(alice.token) }
+        assertEquals("NO_ACCOUNT", client.signInWithGoogle("google-A").body<ApiError>().code)
+    }
+
+    @Test
+    fun googleSignInIsOffWithoutAClientId() = withApp(google = null) { client, _ ->
+        val response = client.signInWithGoogle("google-A")
+        assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+        assertEquals("GOOGLE_DISABLED", response.body<ApiError>().code)
     }
 
     @Test

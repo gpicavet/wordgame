@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,16 +21,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wordgame.android.ApiClient
+import app.wordgame.android.ApiFailure
+import app.wordgame.android.googleIdToken
+import app.wordgame.android.googleSignInAvailable
 import kotlinx.coroutines.launch
 
+/**
+ * A nickname to start playing, or the account linked to the player's Google account. When Google finds no account,
+ * the nickname chosen next creates one linked to it.
+ */
 @Composable
 fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
     var nickname by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Google account without a WordWok account yet: linked to the one about to be created.
+    var pendingGoogle by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Surface(Modifier.fillMaxSize()) {
         Column(
@@ -38,7 +50,10 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("Bienvenue", style = MaterialTheme.typography.headlineMedium)
-            Text("Choisis un pseudo pour jouer avec tes amis.")
+            Text(
+                if (pendingGoogle == null) "Choisis un pseudo pour jouer avec tes amis."
+                else "Aucun compte n'est associé à ce compte Google : choisis un pseudo, ton nouveau compte y sera associé.",
+            )
             OutlinedTextField(
                 value = nickname,
                 onValueChange = { nickname = it.trim().take(16) },
@@ -53,13 +68,34 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
                 onClick = {
                     busy = true
                     scope.launch {
-                        attempt { api.register(nickname) }
+                        attempt { api.register(nickname, pendingGoogle) }
                             .onSuccess { onRegistered(it.nickname) }
                             .onFailure { error = it.userMessage() }
                         busy = false
                     }
                 },
             ) { Text("Commencer") }
+            if (googleSignInAvailable && pendingGoogle == null) {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            attempt { googleIdToken(context) }
+                                .onSuccess { idToken ->
+                                    if (idToken != null) attempt { api.signInWithGoogle(idToken) }
+                                        .onSuccess { onRegistered(it.nickname) }
+                                        .onFailure { e ->
+                                            if ((e as? ApiFailure)?.error?.code == "NO_ACCOUNT") pendingGoogle = idToken
+                                            else error = e.userMessage()
+                                        }
+                                }
+                                .onFailure { error = it.userMessage() }
+                            busy = false
+                        }
+                    },
+                ) { Text("J'ai déjà un compte : se connecter avec Google") }
+            }
         }
     }
 }

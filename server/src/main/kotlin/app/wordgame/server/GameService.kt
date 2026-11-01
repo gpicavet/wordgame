@@ -35,7 +35,8 @@ import kotlin.random.asKotlinRandom
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
-data class User(val id: String, val nickname: String, val tag: Int = 0)
+/** [google]: linked to a Google account (only filled in for the signed-in user). */
+data class User(val id: String, val nickname: String, val tag: Int = 0, val google: Boolean = false)
 
 class ApiException(
     val status: HttpStatusCode,
@@ -53,6 +54,8 @@ class GameService(
     private val random: Random = SecureRandom().asKotlinRandom(),
     private val notifier: Notifier = NoNotifier,
     private val bots: List<ServerBot> = emptyList(),
+    /** Checks "Sign in with Google" tokens; null: Google sign-in is off. */
+    private val google: GoogleTokens? = null,
 ) {
     private val botsById = bots.associateBy { it.userId }
 
@@ -72,40 +75,94 @@ class GameService(
         fun bestOpponentScore(seat: Int) = state.players.indices.filter { it != seat }.maxOf { state.players[it].score }
     }
 
-    /** A new account; the nickname may be taken, the tag tells the players apart. */
-    suspend fun register(nickname: String): AuthResponse {
+    /**
+     * A new account; the nickname may be taken, the tag tells the players apart. With [googleIdToken], the
+     * account is linked to that Google account at once (signing in with Google found no account).
+     */
+    suspend fun register(nickname: String, googleIdToken: String? = null): AuthResponse {
         if (!NICKNAME.matches(nickname)) {
             throw ApiException(HttpStatusCode.BadRequest, "INVALID_NICKNAME", "3 à 16 caractères : lettres, chiffres, _ ou -")
         }
-        val token = randomToken()
+        val google = googleIdToken?.let { googleSubject(it) }
         return db.tx {
+            if (google != null) checkGoogleFree(google, null)
             // Released by [releaseAccount]: the first to register it again gets the account back, games and stats.
             val released = query("SELECT id, nickname, tag FROM users WHERE nickname = ? AND token_hash = ? || id", nickname, RELEASED) {
                 User(it.getString(1), it.getString(2), it.getInt(3))
             }.firstOrNull()
-            if (released != null) {
-                update("UPDATE users SET token_hash = ? WHERE id = ?", sha256(token), released.id)
-                return@tx AuthResponse(released.id, released.nickname, token, released.tag)
+            val user = if (released != null) {
+                update("UPDATE users SET token_hash = ? || id WHERE id = ?", ACCOUNT, released.id)
+                released
+            } else {
+                val taken = query("SELECT tag FROM users WHERE nickname = ? AND tag > 0", nickname) { it.getInt(1) }.toSet()
+                if (taken.size > 8000) throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo trop répandu, choisis-en un autre")
+                val tag = generateSequence { Tags.random(random) }.first { it !in taken }
+                val id = UUID.randomUUID().toString()
+                update(
+                    "INSERT INTO users(id, nickname, token_hash, created_at, tag) VALUES (?, ?, ? || ?, ?, ?)",
+                    id, nickname, ACCOUNT, id, now(), tag,
+                )
+                User(id, nickname, tag)
             }
-            val taken = query("SELECT tag FROM users WHERE nickname = ? AND tag > 0", nickname) { it.getInt(1) }.toSet()
-            if (taken.size > 8000) throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo trop répandu, choisis-en un autre")
-            val tag = generateSequence { Tags.random(random) }.first { it !in taken }
-            val id = UUID.randomUUID().toString()
-            update(
-                "INSERT INTO users(id, nickname, token_hash, created_at, tag) VALUES (?, ?, ?, ?, ?)",
-                id, nickname, sha256(token), now(), tag,
-            )
-            AuthResponse(id, nickname, token, tag)
+            if (google != null) update("UPDATE users SET google_sub = ? WHERE id = ?", google, user.id)
+            newSession(user)
         }
+    }
+
+    /** Signs in on a new phone (or after reinstalling) with the Google account linked to an account. */
+    suspend fun signInWithGoogle(idToken: String): AuthResponse {
+        val google = googleSubject(idToken)
+        return db.tx {
+            val user = query("SELECT id, nickname, tag FROM users WHERE google_sub = ?", google) {
+                User(it.getString(1), it.getString(2), it.getInt(3))
+            }.firstOrNull() ?: throw ApiException(HttpStatusCode.NotFound, "NO_ACCOUNT", "Aucun compte n'est associé à ce compte Google")
+            newSession(user)
+        }
+    }
+
+    /** Links [user]'s account to a Google account, to find it again on another phone. */
+    suspend fun linkGoogle(user: User, idToken: String) {
+        val google = googleSubject(idToken)
+        db.tx {
+            checkGoogleFree(google, user)
+            update("UPDATE users SET google_sub = ? WHERE id = ?", google, user.id)
+        }
+    }
+
+    private fun googleSubject(idToken: String): String {
+        val tokens = google ?: throw ApiException(HttpStatusCode.ServiceUnavailable, "GOOGLE_DISABLED", "Connexion Google indisponible")
+        return tokens.subject(idToken) ?: throw ApiException(HttpStatusCode.Unauthorized, "INVALID_GOOGLE_TOKEN", "Connexion Google refusée")
+    }
+
+    /** A Google account belongs to one account at most. */
+    private fun Connection.checkGoogleFree(google: String, user: User?) {
+        val owner = query("SELECT id, nickname, tag FROM users WHERE google_sub = ?", google) {
+            User(it.getString(1), it.getString(2), it.getInt(3))
+        }.firstOrNull()
+        if (owner != null && owner.id != user?.id) {
+            throw ApiException(
+                HttpStatusCode.Conflict, "GOOGLE_ALREADY_LINKED",
+                "Ce compte Google est déjà associé à ${owner.nickname}#${owner.tag}",
+            )
+        }
+    }
+
+    private fun Connection.newSession(user: User): AuthResponse {
+        val token = randomToken()
+        update("INSERT INTO sessions(token_hash, user_id, created_at) VALUES (?, ?, ?)", sha256(token), user.id, now())
+        return AuthResponse(user.id, user.nickname, token, user.tag)
     }
 
     /**
      * For a player who lost their token (app deleted, new phone): the next registration of [nickname] takes the
-     * account over, and the old token stops working. On the server, the same as:
-     * `sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET token_hash = 'released:' || id WHERE nickname = '…' AND tag = …"`
+     * account over, and the old tokens stop working. On the server, the same as:
+     * `sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET token_hash = 'released:' || id WHERE nickname = '…' AND tag = …;
+     *  DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE token_hash LIKE 'released:%')"`
      */
     suspend fun releaseAccount(nickname: String, tag: Int): Boolean = db.tx {
-        update("UPDATE users SET token_hash = ? || id WHERE nickname = ? AND tag = ? AND tag > 0", RELEASED, nickname, tag) > 0
+        val released = update("UPDATE users SET token_hash = ? || id WHERE nickname = ? AND tag = ? AND tag > 0", RELEASED, nickname, tag) > 0
+        update("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE token_hash = ? || id)", RELEASED)
+        released
     }
 
     /**
@@ -130,11 +187,15 @@ class GameService(
             }
         }
         update("DELETE FROM devices WHERE user_id = ?", user.id)
+        update("DELETE FROM sessions WHERE user_id = ?", user.id)
         update("DELETE FROM matchmaking WHERE user_id = ?", user.id)
         update("DELETE FROM hints WHERE user_id = ?", user.id)
         val stillInGames = query("SELECT 1 FROM game_players WHERE user_id = ? LIMIT 1", user.id) { true }.isNotEmpty()
         if (stillInGames) {
-            update("UPDATE users SET nickname = ?, tag = 0, token_hash = ? || id WHERE id = ?", DELETED_NICKNAME, DELETED, user.id)
+            update(
+                "UPDATE users SET nickname = ?, tag = 0, google_sub = NULL, token_hash = ? || id WHERE id = ?",
+                DELETED_NICKNAME, DELETED, user.id,
+            )
         } else {
             update("DELETE FROM users WHERE id = ?", user.id)
         }
@@ -142,9 +203,10 @@ class GameService(
     }.let { notifier.send(it) }
 
     suspend fun authenticate(token: String): User? = db.tx {
-        query("SELECT id, nickname, tag FROM users WHERE token_hash = ?", sha256(token)) {
-            User(it.getString(1), it.getString(2), it.getInt(3))
-        }.firstOrNull()
+        query(
+            "SELECT u.id, u.nickname, u.tag, u.google_sub IS NOT NULL FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
+            sha256(token),
+        ) { User(it.getString(1), it.getString(2), it.getInt(3), it.getBoolean(4)) }.firstOrNull()
     }
 
     suspend fun listGames(user: User): List<GameSummary> = db.tx {
@@ -561,6 +623,8 @@ class GameService(
     private companion object {
         const val MAX_ACTIVE_GAMES = 30
         val NICKNAME = Regex("^[A-Za-z0-9_-]{3,16}$")
+        /** Prefix of the token hash of an ordinary account (its tokens are in sessions), followed by its id. */
+        const val ACCOUNT = "account:"
         /** Prefix of the token hash of a released account (see [GameService.releaseAccount]), followed by its id. */
         const val RELEASED = "released:"
         /** Prefix of the token hash of a deleted account still seen in other players' games, followed by its id. */

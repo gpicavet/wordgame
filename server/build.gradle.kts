@@ -25,6 +25,7 @@ dependencies {
     implementation(libs.ktor.serialization.json)
     implementation(libs.sqlite.jdbc)
     implementation(libs.logback)
+    implementation(libs.nimbus.jose.jwt)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.ktor.server.test.host)

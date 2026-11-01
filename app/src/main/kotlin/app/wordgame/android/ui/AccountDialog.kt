@@ -13,12 +13,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wordgame.android.ApiClient
 import app.wordgame.android.BuildConfig
 import app.wordgame.android.attempt
+import app.wordgame.android.googleIdToken
+import app.wordgame.android.googleSignInAvailable
 import kotlinx.coroutines.launch
 
 /**
@@ -28,12 +31,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Unit, onDismiss: () -> Unit) {
     var tag by remember { mutableStateOf(api.session.tag) }
+    var google by remember { mutableStateOf<Boolean?>(null) }
     var confirming by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    // Accounts from before the tags: ask the server once.
-    LaunchedEffect(Unit) { if (tag == 0) attempt { api.me() }.onSuccess { tag = it.tag } }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { attempt { api.me() }.onSuccess { tag = it.tag; google = it.google } }
 
     if (confirming) {
         AlertDialog(
@@ -68,6 +72,23 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (tag > 0) "$nickname#$tag" else nickname, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Donne ce nom à tes amis pour qu'ils t'invitent : d'autres joueurs peuvent avoir le même pseudo.")
+                when {
+                    google == true -> Text("✓ Sauvegardé avec Google : tu retrouveras ton compte sur un autre téléphone.")
+                    google == false && googleSignInAvailable -> {
+                        Text("Sans sauvegarde, ton compte est perdu si tu désinstalles l'application ou changes de téléphone.")
+                        TextButton(enabled = !busy, onClick = {
+                            busy = true
+                            error = null
+                            scope.launch {
+                                attempt { googleIdToken(context)?.let { api.linkGoogle(it); true } ?: false }
+                                    .onSuccess { linked -> if (linked) google = true }
+                                    .onFailure { error = it.userMessage() }
+                                busy = false
+                            }
+                        }) { Text("Sauvegarder avec Google") }
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 val uriHandler = LocalUriHandler.current
                 TextButton(onClick = { uriHandler.openUri("${BuildConfig.API_URL}/confidentialite") }) { Text("Politique de confidentialité") }
                 TextButton(onClick = { confirming = true }) { Text("Supprimer mon compte", color = MaterialTheme.colorScheme.error) }

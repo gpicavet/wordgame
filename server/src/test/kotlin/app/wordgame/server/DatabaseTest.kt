@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 
 class DatabaseTest {
     @Test
-    fun oldDatabaseGetsSharedNicknamesAndTags() = runBlocking {
+    fun oldDatabaseGetsSharedNicknamesTagsAndSessions() = runBlocking {
         val file = File.createTempFile("wordgame-old", ".db").apply { deleteOnExit() }
         DriverManager.getConnection("jdbc:sqlite:${file.path}").use { c ->
             c.createStatement().use { st ->
@@ -30,6 +30,9 @@ class DatabaseTest {
                 assertEquals(2, query("SELECT COUNT(*) FROM users WHERE nickname = 'greg'") { it.getInt(1) }.single())
                 assertEquals(2, query("SELECT COUNT(*) FROM game_players p JOIN users u ON u.id = p.user_id") { it.getInt(1) }.single())
                 assertTrue(query("PRAGMA foreign_key_check") { true }.isEmpty())
+                // The old token is now the account's first session.
+                assertEquals(listOf("u1"), query("SELECT user_id FROM sessions WHERE token_hash = 'h1'") { it.getString(1) })
+                assertEquals("account:u1", query("SELECT token_hash FROM users WHERE id = 'u1'") { it.getString(1) }.single())
             }
         }
         // Opening it again changes nothing.

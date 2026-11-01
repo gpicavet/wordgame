@@ -10,6 +10,7 @@ import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.CreateGameRequest
 import app.wordgame.protocol.DeviceRequest
+import app.wordgame.protocol.GoogleRequest
 import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
@@ -94,7 +95,10 @@ fun main() {
         put("fr", dictionary)
         english?.let { put("en", it) }
     }
-    val service = GameService(db, dictionaries, notifier = notifier, bots = bots)
+    // "Sign in with Google": the Web OAuth client id of the Google Cloud project (the app's serverClientId).
+    val google = env["WORDGAME_GOOGLE_CLIENT_ID"]?.takeIf { it.isNotBlank() }?.let(::GoogleIdTokens)
+    log.info("Google sign-in: {}", if (google != null) "on" else "off (no WORDGAME_GOOGLE_CLIENT_ID)")
+    val service = GameService(db, dictionaries, notifier = notifier, bots = bots, google = google)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
 
     embeddedServer(
@@ -146,13 +150,19 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null) {
 
         route("/api/v1") {
             post("/auth/register") {
-                call.respond(service.register(call.receive<RegisterRequest>().nickname))
+                val request = call.receive<RegisterRequest>()
+                call.respond(service.register(request.nickname, request.googleIdToken))
             }
+            post("/auth/google") { call.respond(service.signInWithGoogle(call.receive<GoogleRequest>().idToken)) }
 
             authenticate("auth") {
                 get("/me") {
                     val user = call.user()
-                    call.respond(Me(user.id, user.nickname, user.tag))
+                    call.respond(Me(user.id, user.nickname, user.tag, user.google))
+                }
+                post("/me/google") {
+                    service.linkGoogle(call.user(), call.receive<GoogleRequest>().idToken)
+                    call.respond(HttpStatusCode.NoContent)
                 }
                 delete("/me") {
                     service.deleteAccount(call.user())

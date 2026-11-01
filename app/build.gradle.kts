@@ -27,6 +27,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         // The VPS. For a local server: -PapiUrl=http://10.0.2.2:8080 (emulator) or http://<Mac IP>:8080 (phone).
+        // "Sign in with Google": the Web OAuth client id of the Google Cloud project, the server's
+        // WORDGAME_GOOGLE_CLIENT_ID (-PgoogleClientId=… or gradle.properties). Empty: the buttons are hidden.
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${project.findProperty("googleClientId") ?: ""}\"")
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://vps-0483f9f2.vps.ovh.ca"}\"")
     }
 
@@ -80,6 +83,10 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+
+    implementation(libs.credentials)
+    implementation(libs.credentials.play.services)
+    implementation(libs.googleid)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktor.client.core)

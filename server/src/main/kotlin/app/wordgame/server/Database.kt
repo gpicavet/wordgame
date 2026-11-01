@@ -69,18 +69,27 @@ class Database(path: String) : AutoCloseable {
             }
         }
         st.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_nickname_tag ON users(nickname, tag) WHERE tag > 0")
+        st.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google ON users(google_sub) WHERE google_sub IS NOT NULL")
+        // Tokens from before sessions (a hex hash, no "kind:" prefix) become the account's first session.
+        st.execute(
+            "INSERT OR IGNORE INTO sessions(token_hash, user_id, created_at) " +
+                "SELECT token_hash, id, created_at FROM users WHERE token_hash NOT LIKE '%:%'",
+        )
+        st.execute("UPDATE users SET token_hash = 'account:' || id WHERE token_hash NOT LIKE '%:%'")
     }
 
     private companion object {
         val SCHEMA = listOf(
             // Several players may share a nickname: the tag tells them apart ("greg#4821"). Robots and deleted
-            // accounts have tag 0.
+            // accounts have tag 0. token_hash: the account's state ("account:", "bot:", "released:" or "deleted:"
+            // then its id), or the token of its single phone before sessions; the tokens are in sessions.
             """CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 nickname TEXT NOT NULL COLLATE NOCASE,
                 token_hash TEXT NOT NULL UNIQUE,
                 created_at INTEGER NOT NULL,
-                tag INTEGER NOT NULL DEFAULT 0)""",
+                tag INTEGER NOT NULL DEFAULT 0,
+                google_sub TEXT)""",
             """CREATE TABLE IF NOT EXISTS games (
                 id TEXT PRIMARY KEY,
                 state TEXT NOT NULL,
@@ -110,6 +119,12 @@ class Database(path: String) : AutoCloseable {
             """CREATE TABLE IF NOT EXISTS matchmaking (
                 user_id TEXT PRIMARY KEY REFERENCES users(id),
                 queued_at INTEGER NOT NULL)""",
+            // One per phone signed in (several with Google sign-in), by the hash of its token.
+            """CREATE TABLE IF NOT EXISTS sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                created_at INTEGER NOT NULL)""",
+            "CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)",
             // Turns where the player asked for hints (games against robots only), counted in their stats.
             """CREATE TABLE IF NOT EXISTS hints (
                 game_id TEXT NOT NULL REFERENCES games(id),
@@ -119,6 +134,8 @@ class Database(path: String) : AutoCloseable {
         )
         val MIGRATIONS = listOf(
             "ALTER TABLE matchmaking ADD COLUMN language TEXT NOT NULL DEFAULT 'fr'",
+            // google_sub: the Google account linked by "Sign in with Google" (its stable id), if any.
+            "ALTER TABLE users ADD COLUMN google_sub TEXT",
         )
     }
 }

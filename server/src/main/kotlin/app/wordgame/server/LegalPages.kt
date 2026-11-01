@@ -21,7 +21,7 @@ private fun contact(email: String?) =
 fun privacyPage(contactEmail: String?) = page(
     "Politique de confidentialité",
     """<h1>Politique de confidentialité de WordWok</h1>
-<p>Dernière mise à jour : 1<sup>er</sup> novembre 2026.</p>
+<p>Dernière mise à jour : 1<sup>er</sup> novembre 2026 (connexion avec Google).</p>
 <p>WordWok est un jeu de lettres développé à titre personnel. Il ne contient ni publicité ni outil de mesure d'audience,
 et ne vend ni ne partage aucune donnée. Cette page dit quelles données il utilise, pourquoi, et combien de temps.</p>
 
@@ -29,7 +29,8 @@ et ne vend ni ne partage aucune donnée. Cette page dit quelles données il util
 <table>
 <tr><th>Donnée</th><th>Pourquoi</th></tr>
 <tr><td>Ton pseudo et son numéro (ex. greg#4821)</td><td>Te désigner auprès des autres joueurs, te permettre d'être invité.</td></tr>
-<tr><td>Un jeton de connexion (seule son empreinte est conservée)</td><td>Reconnaître ton téléphone sans mot de passe.</td></tr>
+<tr><td>Un jeton de connexion par téléphone (seule son empreinte est conservée)</td><td>Reconnaître ton téléphone sans mot de passe.</td></tr>
+<tr><td>Si tu sauvegardes ton compte avec Google : l'identifiant de ton compte Google</td><td>Retrouver ton compte sur un autre téléphone. Ni ton adresse e-mail ni ton nom ne sont conservés.</td></tr>
 <tr><td>Tes parties en ligne : coups joués, scores, dates</td><td>Faire fonctionner les parties et calculer tes statistiques.</td></tr>
 <tr><td>Les tours où tu as demandé des indices</td><td>Tes statistiques.</td></tr>
 <tr><td>Le jeton de notification de ton téléphone</td><td>T'avertir quand c'est ton tour ou qu'on te défie.</td></tr>
@@ -46,6 +47,8 @@ au serveur. Ils disparaissent quand tu supprimes ton compte ou l'application.</p
 <ul>
 <li><b>Les autres joueurs</b> de tes parties voient ton pseudo, tes coups et tes scores.</li>
 <li><b>OVHcloud</b> héberge le serveur, au Canada (pays reconnu par l'Union européenne comme assurant une protection adéquate des données).</li>
+<li><b>Google</b>, si tu choisis « Se connecter avec Google » : Google confirme ton identité à WordWok, selon ses propres
+<a href="https://policies.google.com/privacy">règles de confidentialité</a>.</li>
 <li><b>Google (Firebase Cloud Messaging)</b> achemine les notifications : il reçoit le jeton de notification et le texte de
 chaque notification (par exemple « greg a joué KIWI (+12) »).</li>
 </ul>
@@ -78,7 +81,7 @@ fun accountDeletionPage(contactEmail: String?): String {
 $byEmail
 <h2>Ce qui est supprimé</h2>
 <ul>
-<li>ton pseudo et son numéro, et l'accès au compte ;</li>
+<li>ton pseudo et son numéro, l'accès au compte et son lien avec ton compte Google ;</li>
 <li>les jetons de notification de tes téléphones ;</li>
 <li>tes parties contre des robots, et tes demandes d'indices ;</li>
 <li>les parties solo enregistrées sur le téléphone.</li>

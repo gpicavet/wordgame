@@ -101,6 +101,16 @@ Le script installe Java 17, SQLite, Caddy (HTTPS automatique), 1 Go de swap, un 
 
 Mesure locale avec les options de la JVM du service : environ **125 Mo de RAM** avec 200 comptes, 30 parties et 300 requêtes.
 
+## Connexion avec Google
+
+Facultative : un joueur associe son compte à son compte Google (*Mon compte* → *Sauvegarder avec Google*) pour le retrouver sur un autre téléphone (*Se connecter avec Google* à l'accueil). Le serveur vérifie le jeton d'identité Google et ne garde que l'identifiant du compte Google (`users.google_sub`) ; chaque téléphone a son propre jeton (`sessions`).
+
+Réglages, dans le projet Google Cloud du projet Firebase :
+
+1. Écran de consentement OAuth (nom de l'app, adresse de contact, lien vers `/confidentialite`).
+2. Un identifiant client OAuth **Web** : son id va dans `WORDGAME_GOOGLE_CLIENT_ID` (serveur, `deploy/wordgame.service`) et dans `googleClientId` (app : `-PgoogleClientId=…` ou `gradle.properties`). Sans lui, les boutons Google sont cachés et le serveur répond `GOOGLE_DISABLED`.
+3. Un identifiant client OAuth **Android** par clé de signature (paquet `app.wordgame.android`, empreinte SHA-1) : la clé debug (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android`), la clé d'importation (`keytool -list -v -keystore secrets/upload-keystore.jks`) et la clé de signature de Google Play (console Play, *Intégrité de l'application*, après le premier envoi). Une empreinte manquante est la cause habituelle d'un échec de connexion.
+
 ## Publication (Google Play)
 
 La version publiée est signée avec la clé d'importation, rangée dans `secrets/` (non versionné). Pour la créer, une seule fois :
@@ -126,4 +136,4 @@ Une version signée ne s'installe pas par-dessus une version debug (signatures d
 
 ## Pas encore dans le MVP
 
-Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte (Google ou Apple) ; en attendant, `GameService.releaseAccount` permet de reprendre un compte à la main. Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes.
+Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte avec Apple (iOS). Sans compte Google associé, `GameService.releaseAccount` permet de reprendre un compte à la main. Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes.

@@ -15,6 +15,7 @@ import app.wordgame.protocol.CreateGameRequest
 import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.GameView
+import app.wordgame.protocol.GoogleRequest
 import app.wordgame.protocol.MatchmakingResponse
 import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
@@ -68,7 +69,7 @@ class AppContainer(context: Context) {
     fun backend(gameId: String): GameBackend = solo.firstOrNull { it.gameId == gameId }?.backend ?: ServerBackend(api, gameId)
 }
 
-/** Account token, nickname and tag. Losing the token means losing the account until account linking exists. */
+/** Account token, nickname and tag. Losing the token means losing the account, unless it is linked to Google. */
 class Session(context: Context) {
     private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
@@ -164,9 +165,19 @@ class ApiClient(val session: Session) {
         retrySafeCalls()
     }
 
-    suspend fun register(nickname: String): AuthResponse =
-        http.post("/api/v1/auth/register") { json(RegisterRequest(nickname)) }.result<AuthResponse>()
+    /** [googleIdToken]: also link the new account to that Google account. */
+    suspend fun register(nickname: String, googleIdToken: String? = null): AuthResponse =
+        http.post("/api/v1/auth/register") { json(RegisterRequest(nickname, googleIdToken)) }.result<AuthResponse>()
             .also(session::save)
+
+    /** The account linked to that Google account; fails with NO_ACCOUNT when there is none. */
+    suspend fun signInWithGoogle(idToken: String): AuthResponse =
+        http.post("/api/v1/auth/google") { json(GoogleRequest(idToken)) }.result<AuthResponse>()
+            .also(session::save)
+
+    suspend fun linkGoogle(idToken: String) {
+        http.post("/api/v1/me/google") { auth(); json(GoogleRequest(idToken)) }.result<Unit>()
+    }
 
     suspend fun me(): Me = http.get("/api/v1/me") { auth() }.result<Me>().also { session.saveTag(it.tag) }
 

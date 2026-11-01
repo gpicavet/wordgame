@@ -15,15 +15,21 @@ val ApiJson = Json {
     classDiscriminator = "type"
 }
 
+/** [googleIdToken]: also link the new account to this Google account ("Sign in with Google" found none). */
 @Serializable
-data class RegisterRequest(val nickname: String)
+data class RegisterRequest(val nickname: String, val googleIdToken: String? = null)
+
+/** An ID token from "Sign in with Google", to sign in or to link the account. */
+@Serializable
+data class GoogleRequest(val idToken: String)
 
 /** [tag]: tells apart the players with the same nickname ("greg#4821"); 0 from older servers. */
 @Serializable
 data class AuthResponse(val userId: String, val nickname: String, val token: String, val tag: Int = 0)
 
+/** [google]: the account is linked to a Google account. */
 @Serializable
-data class Me(val userId: String, val nickname: String, val tag: Int = 0)
+data class Me(val userId: String, val nickname: String, val tag: Int = 0, val google: Boolean = false)
 
 @Serializable
 data class DeviceRequest(val token: String)

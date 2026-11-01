@@ -20,6 +20,8 @@ Environment=WORDGAME_EN_COMMON_DICT=/opt/wordgame/en-courant.dawg
 Environment=WORDGAME_EN_BOT_WEIGHTS=/opt/wordgame/value-en-v1.txt
 # Firebase service-account key; without it the server runs without push notifications.
 Environment=WORDGAME_FCM_CREDENTIALS=/etc/wordgame/fcm-service-account.json
+# "Sign in with Google": the Web OAuth client id of the Google Cloud project (the app's googleClientId); off when absent.
+Environment=WORDGAME_GOOGLE_CLIENT_ID=520613945414-gc4bo1mo2ffbt40m1r6qasl59hnh6fvq.apps.googleusercontent.com
 # Public contact, shown on /confidentialite and /supprimer-compte (Google Play requires both pages).
 Environment=WORDGAME_CONTACT_EMAIL=wordwok.app@gmail.com
 # Measured ~125 MB RSS under load with these limits (Stardust: 1 GB RAM).
