@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,6 +10,11 @@ plugins {
 // Firebase is configured by app/google-services.json (from the Firebase console, not committed).
 // Without it the app builds and runs, only without push notifications.
 if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
+// Upload key for Google Play (secrets/, not committed): storeFile, storePassword, keyAlias, keyPassword.
+// Without it, release builds are unsigned (see README, "Publication").
+val signing = rootProject.file("secrets/keystore.properties").takeIf { it.exists() }
+    ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
 
 android {
     namespace = "app.wordgame.android"
@@ -23,9 +30,19 @@ android {
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://vps-0483f9f2.vps.ovh.ca"}\"")
     }
 
+    signingConfigs {
+        if (signing != null) create("upload") {
+            storeFile = rootProject.file(signing.getProperty("storeFile"))
+            storePassword = signing.getProperty("storePassword")
+            keyAlias = signing.getProperty("keyAlias")
+            keyPassword = signing.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (signing != null) signingConfig = signingConfigs.getByName("upload")
         }
     }
 

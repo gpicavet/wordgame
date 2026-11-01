@@ -101,6 +101,29 @@ Le script installe Java 17, SQLite, Caddy (HTTPS automatique), 1 Go de swap, un 
 
 Mesure locale avec les options de la JVM du service : environ **125 Mo de RAM** avec 200 comptes, 30 parties et 300 requêtes.
 
+## Publication (Google Play)
+
+La version publiée est signée avec la clé d'importation, rangée dans `secrets/` (non versionné). Pour la créer, une seule fois :
+
+```bash
+mkdir -p secrets
+keytool -genkeypair -v -keystore secrets/upload-keystore.jks -alias upload -keyalg RSA -keysize 4096 -validity 10000
+cat > secrets/keystore.properties <<'PROPS'
+storeFile=secrets/upload-keystore.jks
+storePassword=…
+keyAlias=upload
+keyPassword=…
+PROPS
+```
+
+Garder la clé et ses mots de passe en lieu sûr (gestionnaire de mots de passe, copie hors du Mac) : Google Play signe l'app avec sa propre clé (Play App Signing) et peut réinitialiser une clé d'importation perdue, mais la démarche est lente. Puis, en augmentant `versionCode` à chaque envoi :
+
+```bash
+./gradlew :app:bundleRelease   # app/build/outputs/bundle/release/app-release.aab, à envoyer dans la console Play
+```
+
+Une version signée ne s'installe pas par-dessus une version debug (signatures différentes) : il faut désinstaller, ce qui perd le jeton du compte.
+
 ## Pas encore dans le MVP
 
 Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte (Google ou Apple) ; en attendant, `GameService.releaseAccount` permet de reprendre un compte à la main. Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes.

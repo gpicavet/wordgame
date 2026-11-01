@@ -11,3 +11,6 @@ app/google-services.json
 secrets/
 dictionaries/private/
 dictionaries/candidats-courts.txt
+*.jks
+*.keystore
+keystore.properties
