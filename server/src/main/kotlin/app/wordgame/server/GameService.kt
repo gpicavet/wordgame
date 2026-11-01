@@ -77,13 +77,33 @@ class GameService(
             throw ApiException(HttpStatusCode.BadRequest, "INVALID_NICKNAME", "3 à 16 caractères : lettres, chiffres, _ ou -")
         }
         val token = randomToken()
-        val id = UUID.randomUUID().toString()
-        db.tx {
-            val taken = query("SELECT 1 FROM users WHERE nickname = ?", nickname) { true }.isNotEmpty()
-            if (taken) throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo déjà utilisé")
-            update("INSERT INTO users(id, nickname, token_hash, created_at) VALUES (?, ?, ?, ?)", id, nickname, sha256(token), now())
+        return db.tx {
+            val existing = query("SELECT id, nickname, token_hash FROM users WHERE nickname = ?", nickname) {
+                Triple(it.getString(1), it.getString(2), it.getString(3))
+            }.firstOrNull()
+            when {
+                existing == null -> {
+                    val id = UUID.randomUUID().toString()
+                    update("INSERT INTO users(id, nickname, token_hash, created_at) VALUES (?, ?, ?, ?)", id, nickname, sha256(token), now())
+                    AuthResponse(id, nickname, token)
+                }
+                // Released by [releaseAccount]: the first to register it again gets the account back, games and stats.
+                existing.third == RELEASED + existing.first -> {
+                    update("UPDATE users SET token_hash = ? WHERE id = ?", sha256(token), existing.first)
+                    AuthResponse(existing.first, existing.second, token)
+                }
+                else -> throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo déjà utilisé")
+            }
         }
-        return AuthResponse(id, nickname, token)
+    }
+
+    /**
+     * For a player who lost their token (app deleted, new phone): the next registration of [nickname] takes the
+     * account over, and the old token stops working. On the server, the same as:
+     * `sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET token_hash = 'released:' || id WHERE nickname = '…'"`
+     */
+    suspend fun releaseAccount(nickname: String): Boolean = db.tx {
+        update("UPDATE users SET token_hash = ? || id WHERE nickname = ? AND id NOT LIKE 'bot-%'", RELEASED, nickname) > 0
     }
 
     suspend fun authenticate(token: String): User? = db.tx {
@@ -482,5 +502,7 @@ class GameService(
     private companion object {
         const val MAX_ACTIVE_GAMES = 30
         val NICKNAME = Regex("^[A-Za-z0-9_-]{3,16}$")
+        /** Prefix of the token hash of a released account (see [GameService.releaseAccount]), followed by its id. */
+        const val RELEASED = "released:"
     }
 }

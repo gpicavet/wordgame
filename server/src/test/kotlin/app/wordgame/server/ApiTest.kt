@@ -263,6 +263,24 @@ class ApiTest {
     }
 
     @Test
+    fun releasedAccountIsTakenOverByTheNextRegistration() = withApp { client, service ->
+        val alice = client.register("alice")
+        client.register("bob")
+        assertTrue(service.releaseAccount("ALICE"))
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/games") { bearerAuth(alice.token) }.status)
+        val again = client.register("Alice")
+        assertEquals(alice.userId, again.userId)
+        assertEquals("alice", again.nickname)
+        assertEquals(HttpStatusCode.OK, client.get("/api/v1/games") { bearerAuth(again.token) }.status)
+        // Only once: taken again, it is an ordinary account.
+        val dup = client.post("/api/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("alice"))
+        }
+        assertEquals("NICKNAME_TAKEN", dup.body<ApiError>().code)
+    }
+
+    @Test
     fun rejectsDuplicateNicknameAndMissingToken() = withApp { client, _ ->
         client.register("alice")
         val dup = client.post("/api/v1/auth/register") {
