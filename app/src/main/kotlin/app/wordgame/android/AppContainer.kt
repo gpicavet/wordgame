@@ -16,6 +16,7 @@ import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
+import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.RegisterRequest
@@ -67,16 +68,22 @@ class AppContainer(context: Context) {
     fun backend(gameId: String): GameBackend = solo.firstOrNull { it.gameId == gameId }?.backend ?: ServerBackend(api, gameId)
 }
 
-/** Account token. Losing it means losing the account until account linking exists. */
+/** Account token, nickname and tag. Losing the token means losing the account until account linking exists. */
 class Session(context: Context) {
     private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     val token: String? get() = prefs.getString("token", null)
     val nickname: String? get() = prefs.getString("nickname", null)
+    /** 0 until known (accounts from before the tags, see [ApiClient.me]). */
+    val tag: Int get() = prefs.getInt("tag", 0)
 
     fun save(auth: AuthResponse) {
-        prefs.edit().putString("token", auth.token).putString("nickname", auth.nickname).apply()
+        prefs.edit().putString("token", auth.token).putString("nickname", auth.nickname).putInt("tag", auth.tag).apply()
     }
+
+    fun saveTag(tag: Int) = prefs.edit().putInt("tag", tag).apply()
+
+    fun clear() = prefs.edit().clear().apply()
 }
 
 private const val EXTRA_WORDS = "fr-2lettres.txt"
@@ -150,7 +157,7 @@ fun HttpClientConfig<*>.retrySafeCalls(delayStepMs: Long = 500) {
     }
 }
 
-class ApiClient(private val session: Session) {
+class ApiClient(val session: Session) {
     private val http = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(ApiJson) }
         defaultRequest { url(BuildConfig.API_URL) }
@@ -160,6 +167,13 @@ class ApiClient(private val session: Session) {
     suspend fun register(nickname: String): AuthResponse =
         http.post("/api/v1/auth/register") { json(RegisterRequest(nickname)) }.result<AuthResponse>()
             .also(session::save)
+
+    suspend fun me(): Me = http.get("/api/v1/me") { auth() }.result<Me>().also { session.saveTag(it.tag) }
+
+    /** Deletes the account on the server; the caller then forgets it on the phone. */
+    suspend fun deleteAccount() {
+        http.delete("/api/v1/me") { auth() }.result<Unit>()
+    }
 
     suspend fun games(): List<GameSummary> = http.get("/api/v1/games") { auth() }.result()
 

@@ -143,6 +143,7 @@ private fun SeatEditor(number: Int, seat: SeatChoice, kinds: List<SeatKind>, onR
             SeatKind.FRIEND -> OutlinedTextField(
                 seat.nickname, { seat.nickname = it.trim() }, Modifier.fillMaxWidth(),
                 label = { Text("Pseudo de ton ami") }, singleLine = true,
+                supportingText = { Text("Avec son numéro si besoin : greg#4821") },
             )
             SeatKind.ROBOT -> {
                 var open by remember { mutableStateOf(false) }

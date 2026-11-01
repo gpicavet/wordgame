@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wordgame.android.ui.GameScreen
 import app.wordgame.android.ui.GamesScreen
+import app.wordgame.android.ui.AccountDialog
 import app.wordgame.android.ui.OnboardingScreen
 import app.wordgame.android.ui.StatsScreen
 import app.wordgame.android.ui.WordgameTheme
@@ -58,6 +59,7 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
     var nickname by rememberSaveable { mutableStateOf(container.session.nickname) }
     var openGameId by rememberSaveable { mutableStateOf<String?>(null) }
     var showStats by rememberSaveable { mutableStateOf(false) }
+    var showAccount by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(notifiedGame) {
         if (notifiedGame != null && nickname != null) {
@@ -91,6 +93,22 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
             BackHandler { showStats = false }
             StatsScreen(container.api, onBack = { showStats = false })
         }
-        else -> GamesScreen(container.api, container.solo, nickname!!, onOpenGame = { openGameId = it }, onOpenStats = { showStats = true })
+        else -> GamesScreen(
+            container.api, container.solo, nickname!!,
+            onOpenGame = { openGameId = it }, onOpenStats = { showStats = true }, onOpenAccount = { showAccount = true },
+        )
+    }
+    if (showAccount && nickname != null) {
+        AccountDialog(
+            container.api, nickname!!,
+            // Deleted on the server: forget it on the phone too, solo games included, and start over.
+            onDeleted = {
+                container.solo.forEach { it.delete() }
+                container.session.clear()
+                showAccount = false
+                nickname = null
+            },
+            onDismiss = { showAccount = false },
+        )
     }
 }

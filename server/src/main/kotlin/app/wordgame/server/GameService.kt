@@ -35,7 +35,7 @@ import kotlin.random.asKotlinRandom
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
-data class User(val id: String, val nickname: String)
+data class User(val id: String, val nickname: String, val tag: Int = 0)
 
 class ApiException(
     val status: HttpStatusCode,
@@ -72,43 +72,79 @@ class GameService(
         fun bestOpponentScore(seat: Int) = state.players.indices.filter { it != seat }.maxOf { state.players[it].score }
     }
 
+    /** A new account; the nickname may be taken, the tag tells the players apart. */
     suspend fun register(nickname: String): AuthResponse {
         if (!NICKNAME.matches(nickname)) {
             throw ApiException(HttpStatusCode.BadRequest, "INVALID_NICKNAME", "3 à 16 caractères : lettres, chiffres, _ ou -")
         }
         val token = randomToken()
         return db.tx {
-            val existing = query("SELECT id, nickname, token_hash FROM users WHERE nickname = ?", nickname) {
-                Triple(it.getString(1), it.getString(2), it.getString(3))
+            // Released by [releaseAccount]: the first to register it again gets the account back, games and stats.
+            val released = query("SELECT id, nickname, tag FROM users WHERE nickname = ? AND token_hash = ? || id", nickname, RELEASED) {
+                User(it.getString(1), it.getString(2), it.getInt(3))
             }.firstOrNull()
-            when {
-                existing == null -> {
-                    val id = UUID.randomUUID().toString()
-                    update("INSERT INTO users(id, nickname, token_hash, created_at) VALUES (?, ?, ?, ?)", id, nickname, sha256(token), now())
-                    AuthResponse(id, nickname, token)
-                }
-                // Released by [releaseAccount]: the first to register it again gets the account back, games and stats.
-                existing.third == RELEASED + existing.first -> {
-                    update("UPDATE users SET token_hash = ? WHERE id = ?", sha256(token), existing.first)
-                    AuthResponse(existing.first, existing.second, token)
-                }
-                else -> throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo déjà utilisé")
+            if (released != null) {
+                update("UPDATE users SET token_hash = ? WHERE id = ?", sha256(token), released.id)
+                return@tx AuthResponse(released.id, released.nickname, token, released.tag)
             }
+            val taken = query("SELECT tag FROM users WHERE nickname = ? AND tag > 0", nickname) { it.getInt(1) }.toSet()
+            if (taken.size > 8000) throw ApiException(HttpStatusCode.Conflict, "NICKNAME_TAKEN", "Pseudo trop répandu, choisis-en un autre")
+            val tag = generateSequence { Tags.random(random) }.first { it !in taken }
+            val id = UUID.randomUUID().toString()
+            update(
+                "INSERT INTO users(id, nickname, token_hash, created_at, tag) VALUES (?, ?, ?, ?, ?)",
+                id, nickname, sha256(token), now(), tag,
+            )
+            AuthResponse(id, nickname, token, tag)
         }
     }
 
     /**
      * For a player who lost their token (app deleted, new phone): the next registration of [nickname] takes the
      * account over, and the old token stops working. On the server, the same as:
-     * `sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET token_hash = 'released:' || id WHERE nickname = '…'"`
+     * `sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET token_hash = 'released:' || id WHERE nickname = '…' AND tag = …"`
      */
-    suspend fun releaseAccount(nickname: String): Boolean = db.tx {
-        update("UPDATE users SET token_hash = ? || id WHERE nickname = ? AND id NOT LIKE 'bot-%'", RELEASED, nickname) > 0
+    suspend fun releaseAccount(nickname: String, tag: Int): Boolean = db.tx {
+        update("UPDATE users SET token_hash = ? || id WHERE nickname = ? AND tag = ? AND tag > 0", RELEASED, nickname, tag) > 0
     }
 
+    /**
+     * Deletes the account of [user]: their games against robots only disappear; in the others they resign (the
+     * game goes on, or ends, for the other players) and appear as "Joueur supprimé". Phones, matchmaking and hints
+     * are forgotten, and the token stops working.
+     */
+    suspend fun deleteAccount(user: User) = db.tx {
+        val notifications = ArrayList<Notification>()
+        val gameIds = query("SELECT DISTINCT game_id FROM game_players WHERE user_id = ?", user.id) { it.getString(1) }
+        for (id in gameIds) {
+            val game = load(id)
+            if (game.seats.none { it.userId != user.id && it.bot == null }) {
+                deleteGameRows(id)
+                continue
+            }
+            if (game.state.status != GameStatus.ACTIVE) continue
+            val outcome = Game.resign(game.state, game.seatOf(user), MoveType.RESIGN, random)
+            if (outcome is MoveOutcome.Applied) {
+                save(id, outcome.state, outcome.record)
+                notifications += afterMove(game, outcome.state, outcome.record) + playBots(load(id))
+            }
+        }
+        update("DELETE FROM devices WHERE user_id = ?", user.id)
+        update("DELETE FROM matchmaking WHERE user_id = ?", user.id)
+        update("DELETE FROM hints WHERE user_id = ?", user.id)
+        val stillInGames = query("SELECT 1 FROM game_players WHERE user_id = ? LIMIT 1", user.id) { true }.isNotEmpty()
+        if (stillInGames) {
+            update("UPDATE users SET nickname = ?, tag = 0, token_hash = ? || id WHERE id = ?", DELETED_NICKNAME, DELETED, user.id)
+        } else {
+            update("DELETE FROM users WHERE id = ?", user.id)
+        }
+        notifications.filter { it.userId != user.id }
+    }.let { notifier.send(it) }
+
     suspend fun authenticate(token: String): User? = db.tx {
-        query("SELECT id, nickname FROM users WHERE token_hash = ?", sha256(token)) { User(it.getString(1), it.getString(2)) }
-            .firstOrNull()
+        query("SELECT id, nickname, tag FROM users WHERE token_hash = ?", sha256(token)) {
+            User(it.getString(1), it.getString(2), it.getInt(3))
+        }.firstOrNull()
     }
 
     suspend fun listGames(user: User): List<GameSummary> = db.tx {
@@ -211,11 +247,7 @@ class GameService(
         val names = request.friends.ifEmpty { listOfNotNull(request.opponentNickname) }
         if (names.isEmpty() && request.bots.isEmpty()) throw ApiException(HttpStatusCode.BadRequest, "NO_OPPONENT", "Choisis au moins un adversaire")
         if (names.size + request.bots.size > 3) throw ApiException(HttpStatusCode.BadRequest, "TOO_MANY_PLAYERS", "4 joueurs au plus")
-        val friends = names.map { name ->
-            query("SELECT id, nickname FROM users WHERE nickname = ?", name) { User(it.getString(1), it.getString(2)) }
-                .firstOrNull()?.takeIf { it.id !in botsById }
-                ?: throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_PLAYER", "Joueur introuvable : $name")
-        }
+        val friends = names.map { findPlayer(it) }
         if (friends.any { it.id == user.id }) throw ApiException(HttpStatusCode.BadRequest, "SELF_GAME", "Impossible de jouer contre soi-même")
         if (friends.map { it.id }.toSet().size < friends.size) {
             throw ApiException(HttpStatusCode.BadRequest, "DUPLICATE_PLAYER", "Chaque joueur ne peut être choisi qu'une fois")
@@ -275,10 +307,31 @@ class GameService(
         if (humans.all { it in seatsThatPlayed }) {
             throw ApiException(HttpStatusCode.Conflict, "GAME_STARTED", "Tous les joueurs ont déjà joué")
         }
+        deleteGameRows(gameId)
+    }
+
+    private fun Connection.deleteGameRows(gameId: String) {
         update("DELETE FROM moves WHERE game_id = ?", gameId)
         update("DELETE FROM hints WHERE game_id = ?", gameId)
         update("DELETE FROM game_players WHERE game_id = ?", gameId)
         update("DELETE FROM games WHERE id = ?", gameId)
+    }
+
+    /** A friend by "greg#4821", or by "greg" alone when only one player has that nickname. */
+    private fun Connection.findPlayer(name: String): User {
+        val (nickname, tag) = Tags.parse(name)
+        val matches = query(
+            "SELECT id, nickname, tag FROM users WHERE nickname = ? AND tag > 0" + (if (tag != null) " AND tag = ?" else ""),
+            *listOfNotNull<Any>(nickname, tag).toTypedArray(),
+        ) { User(it.getString(1), it.getString(2), it.getInt(3)) }
+        return when (matches.size) {
+            0 -> throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_PLAYER", "Joueur introuvable : $name")
+            1 -> matches.single()
+            else -> throw ApiException(
+                HttpStatusCode.Conflict, "AMBIGUOUS_PLAYER",
+                "Plusieurs joueurs s'appellent $nickname : ajoute son numéro (ex. $nickname#1234), visible dans son menu Mon compte",
+            )
+        }
     }
 
     suspend fun view(user: User, gameId: String): GameView = db.tx { view(load(gameId), user) }
@@ -438,13 +491,19 @@ class GameService(
         val row = query("SELECT state, deadline FROM games WHERE id = ?", id) { it.getString(1) to it.getLong(2) }.firstOrNull()
             ?: throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_GAME", "Partie introuvable")
         val seats = query(
-            "SELECT u.id, u.nickname FROM game_players p JOIN users u ON u.id = p.user_id WHERE p.game_id = ? ORDER BY p.seat",
+            "SELECT u.id, u.nickname, u.tag FROM game_players p JOIN users u ON u.id = p.user_id WHERE p.game_id = ? ORDER BY p.seat",
             id,
-        ) { it.getString(1) to it.getString(2) }
-            // The same robot twice: "NonoBot 1" and "NonoBot 2".
-            .let { rows -> rows.mapIndexed { i, (userId, nickname) ->
-                val twins = rows.filter { it.first == userId }
-                Seat(userId, if (twins.size > 1) "$nickname ${rows.take(i + 1).count { it.first == userId }}" else nickname)
+        ) { User(it.getString(1), it.getString(2), it.getInt(3)) }
+            .let { rows -> rows.mapIndexed { i, u ->
+                val twins = rows.filter { it.id == u.id }
+                val namesakes = rows.filter { it.nickname.equals(u.nickname, ignoreCase = true) && it.id != u.id && it.tag > 0 }
+                Seat(u.id, when {
+                    // The same robot twice: "NonoBot 1" and "NonoBot 2".
+                    twins.size > 1 -> "${u.nickname} ${rows.take(i + 1).count { it.id == u.id }}"
+                    // Two players with the same nickname: "greg#4821" and "greg#1307".
+                    namesakes.isNotEmpty() && u.tag > 0 -> "${u.nickname}#${u.tag}"
+                    else -> u.nickname
+                })
             } }
         return StoredGame(id, ApiJson.decodeFromString(GameState.serializer(), row.first), row.second, seats)
     }
@@ -504,5 +563,8 @@ class GameService(
         val NICKNAME = Regex("^[A-Za-z0-9_-]{3,16}$")
         /** Prefix of the token hash of a released account (see [GameService.releaseAccount]), followed by its id. */
         const val RELEASED = "released:"
+        /** Prefix of the token hash of a deleted account still seen in other players' games, followed by its id. */
+        const val DELETED = "deleted:"
+        const val DELETED_NICKNAME = "Joueur supprimé"
     }
 }

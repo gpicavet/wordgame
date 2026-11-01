@@ -73,11 +73,16 @@ Chaque partie garde le jeu de règles avec lequel elle a été créée. **Avant 
 
 | Méthode | Chemin | |
 |---|---|---|
-| POST | `/auth/register` | `{nickname}` → `{userId, nickname, token}` |
+| POST | `/auth/register` | `{nickname}` → `{userId, nickname, token, tag}` |
 | GET | `/me`, `/games`, `/games/{id}` | La vue d'une partie ne contient que le chevalet du joueur qui la demande. |
-| POST | `/games` | `{opponentNickname}` |
+| DELETE | `/me` | Supprime le compte (voir plus bas). |
+| POST | `/games` | `{friends, bots, language}` |
 | POST / DELETE | `/matchmaking` | Associe le joueur au plus ancien joueur en attente, sinon le met en file. |
 | POST | `/games/{id}/moves` | `{expectedMoveNumber, action:{type: play\|exchange\|pass\|resign, …}}` |
+
+Plusieurs joueurs peuvent avoir le même pseudo : un numéro à 4 chiffres les distingue (`greg#4821`, affiché dans le menu *Mon compte* de l'app). Pour inviter un ami, le pseudo seul suffit tant qu'il est unique ; sinon il faut son numéro. Dans une partie, deux joueurs homonymes apparaissent avec leur numéro.
+
+Suppression du compte (exigée par Google Play) : depuis l'app (*Mon compte*), ou par e-mail en suivant la page publique `/supprimer-compte` (adresse dans `WORDGAME_CONTACT_EMAIL`). Les parties contre des robots seulement sont effacées ; dans les autres, le joueur abandonne et apparaît comme « Joueur supprimé ». Ses téléphones, sa file d'attente et ses indices sont oubliés.
 
 Le serveur valide tout : tour du joueur, lettres présentes sur son chevalet, géométrie, mots, score recalculé côté serveur. Le sac est mélangé avec `SecureRandom` et n'est jamais envoyé. `expectedMoveNumber` évite qu'un coup soit joué deux fois. Un joueur qui ne joue pas pendant 72 h perd la partie (vérification toutes les 5 minutes).
 
@@ -96,4 +101,4 @@ Mesure locale avec les options de la JVM du service : environ **125 Mo de RAM** 
 
 ## Pas encore dans le MVP
 
-Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte (Google ou Apple). Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes. Suppression du compte (obligatoire avant la publication).
+Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte (Google ou Apple) ; en attendant, `GameService.releaseAccount` permet de reprendre un compte à la main. Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes.

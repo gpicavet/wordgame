@@ -105,7 +105,14 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenGame: (String) -> Unit, onOpenStats: () -> Unit) {
+fun GamesScreen(
+    api: ApiClient,
+    solo: List<SoloStore>,
+    nickname: String,
+    onOpenGame: (String) -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenAccount: () -> Unit,
+) {
     val vm = viewModel { GamesViewModel(api, solo) }
     val state by vm.state.collectAsStateWithLifecycle()
     var showNewGame by remember { mutableStateOf(false) }
@@ -126,6 +133,9 @@ fun GamesScreen(api: ApiClient, solo: List<SoloStore>, nickname: String, onOpenG
     Scaffold(topBar = { TopAppBar(title = { Text("Parties de $nickname") }, actions = {
         IconButton(onClick = onOpenStats) {
             Icon(painterResource(R.drawable.ic_stats), contentDescription = "Mes statistiques", tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onOpenAccount) {
+            Icon(painterResource(R.drawable.ic_account), contentDescription = "Mon compte", tint = MaterialTheme.colorScheme.primary)
         }
     }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)) {

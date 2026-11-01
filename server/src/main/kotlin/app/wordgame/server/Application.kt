@@ -13,6 +13,7 @@ import app.wordgame.protocol.DeviceRequest
 import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -101,7 +102,7 @@ fun main() {
         port = env["WORDGAME_PORT"]?.toInt() ?: 8080,
         host = env["WORDGAME_HOST"] ?: "0.0.0.0",
     ) {
-        wordgame(service)
+        wordgame(service, env["WORDGAME_CONTACT_EMAIL"])
         launch {
             while (isActive) {
                 delay(5.minutes)
@@ -113,7 +114,8 @@ fun main() {
     }.start(wait = true)
 }
 
-fun Application.wordgame(service: GameService) {
+/** [contactEmail]: where players without the app can ask for their account to be deleted. */
+fun Application.wordgame(service: GameService, contactEmail: String? = null) {
     install(ContentNegotiation) { json(ApiJson) }
     install(CallLogging) {
         level = Level.INFO
@@ -137,6 +139,8 @@ fun Application.wordgame(service: GameService) {
 
     routing {
         get("/health") { call.respondText("ok") }
+        // Required by Google Play: how to delete one's account, reachable without the app.
+        get("/supprimer-compte") { call.respondText(accountDeletionPage(contactEmail), ContentType.Text.Html) }
 
         route("/api/v1") {
             post("/auth/register") {
@@ -146,7 +150,11 @@ fun Application.wordgame(service: GameService) {
             authenticate("auth") {
                 get("/me") {
                     val user = call.user()
-                    call.respond(Me(user.id, user.nickname))
+                    call.respond(Me(user.id, user.nickname, user.tag))
+                }
+                delete("/me") {
+                    service.deleteAccount(call.user())
+                    call.respond(HttpStatusCode.NoContent)
                 }
                 get("/games") { call.respond(service.listGames(call.user())) }
                 get("/me/stats") { call.respond(service.stats(call.user(), call.request.queryParameters["language"])) }
@@ -182,3 +190,31 @@ fun Application.wordgame(service: GameService) {
 }
 
 private fun ApplicationCall.user(): User = principal<User>()!!
+
+private fun accountDeletionPage(contactEmail: String?): String {
+    val byEmail = contactEmail?.let {
+        """<h2>Sans l'application</h2>
+<p>Écris à <a href="mailto:$it?subject=Suppression%20de%20compte%20WordWok">$it</a> en indiquant ton pseudo et son numéro
+(par exemple <b>greg#4821</b>, affiché dans le menu <i>Mon compte</i>). Le compte est supprimé sous 30 jours.</p>"""
+    }.orEmpty()
+    return """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WordWok — Supprimer son compte</title>
+<style>body{font-family:system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em;line-height:1.5}</style></head>
+<body>
+<h1>Supprimer son compte WordWok</h1>
+<h2>Dans l'application</h2>
+<p>Sur l'écran des parties, ouvre le menu <i>Mon compte</i>, puis touche <b>Supprimer mon compte</b> et confirme.</p>
+$byEmail
+<h2>Ce qui est supprimé</h2>
+<ul>
+<li>ton pseudo et ton numéro, et l'accès au compte ;</li>
+<li>les jetons de notification de tes téléphones ;</li>
+<li>tes parties contre des robots, et tes demandes d'indices ;</li>
+<li>les parties solo enregistrées sur le téléphone.</li>
+</ul>
+<h2>Ce qui est conservé</h2>
+<p>Les parties jouées contre d'autres joueurs restent visibles pour eux, sous le nom « Joueur supprimé », sans lien avec toi.
+Tu abandonnes les parties encore en cours.</p>
+</body></html>"""
+}

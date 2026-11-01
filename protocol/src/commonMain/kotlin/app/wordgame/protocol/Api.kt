@@ -18,17 +18,18 @@ val ApiJson = Json {
 @Serializable
 data class RegisterRequest(val nickname: String)
 
+/** [tag]: tells apart the players with the same nickname ("greg#4821"); 0 from older servers. */
 @Serializable
-data class AuthResponse(val userId: String, val nickname: String, val token: String)
+data class AuthResponse(val userId: String, val nickname: String, val token: String, val tag: Int = 0)
 
 @Serializable
-data class Me(val userId: String, val nickname: String)
+data class Me(val userId: String, val nickname: String, val tag: Int = 0)
 
 @Serializable
 data class DeviceRequest(val token: String)
 
 /**
- * A game with friends (by nickname) and robots (by level: "nono", "iro", "belze"), 2 to 4 players with the caller,
+ * A game with friends (by nickname, or "nickname#tag" when several players share it) and robots (by level: "nono", "iro", "belze"), 2 to 4 players with the caller,
  * in [language] ("fr" or "en"). [opponentNickname] is the single friend of older app versions.
  */
 @Serializable

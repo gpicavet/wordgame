@@ -15,6 +15,7 @@ import app.wordgame.protocol.GameSummary
 import app.wordgame.protocol.PlayerStats
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MatchmakingResponse
+import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
 import io.ktor.client.HttpClient
@@ -266,30 +267,67 @@ class ApiTest {
     fun releasedAccountIsTakenOverByTheNextRegistration() = withApp { client, service ->
         val alice = client.register("alice")
         client.register("bob")
-        assertTrue(service.releaseAccount("ALICE"))
+        assertTrue(service.releaseAccount("ALICE", alice.tag))
         assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/games") { bearerAuth(alice.token) }.status)
         val again = client.register("Alice")
         assertEquals(alice.userId, again.userId)
         assertEquals("alice", again.nickname)
+        assertEquals(alice.tag, again.tag)
         assertEquals(HttpStatusCode.OK, client.get("/api/v1/games") { bearerAuth(again.token) }.status)
-        // Only once: taken again, it is an ordinary account.
-        val dup = client.post("/api/v1/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("alice"))
-        }
-        assertEquals("NICKNAME_TAKEN", dup.body<ApiError>().code)
+        // Only once: registering the nickname again makes a new account.
+        assertTrue(client.register("alice").userId != alice.userId)
     }
 
     @Test
-    fun rejectsDuplicateNicknameAndMissingToken() = withApp { client, _ ->
-        client.register("alice")
-        val dup = client.post("/api/v1/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("ALICE"))
-        }
-        assertEquals(HttpStatusCode.Conflict, dup.status)
-        assertEquals("NICKNAME_TAKEN", dup.body<ApiError>().code)
+    fun playersMayShareANicknameAndAreToldApartByTheirTag() = withApp { client, _ ->
+        val alice1 = client.register("alice")
+        val alice2 = client.register("ALICE")
+        val bob = client.register("bob")
+        assertTrue(alice1.userId != alice2.userId)
+        assertTrue(alice1.tag in 1000..9999 && alice2.tag in 1000..9999 && alice1.tag != alice2.tag)
         assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/games").status)
+        val me: Me = client.get("/api/v1/me") { bearerAuth(alice2.token) }.body()
+        assertEquals(alice2.tag, me.tag)
+
+        suspend fun challenge(vararg friends: String) = client.post("/api/v1/games") {
+            bearerAuth(bob.token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateGameRequest(friends = friends.toList()))
+        }
+        assertEquals("AMBIGUOUS_PLAYER", challenge("alice").body<ApiError>().code)
+        assertEquals("UNKNOWN_PLAYER", challenge("alice#1").body<ApiError>().code)
+        val game: GameView = challenge("alice#${alice1.tag}", "Alice#${alice2.tag}").body()
+        assertEquals(
+            setOf("bob", "alice#${alice1.tag}", "ALICE#${alice2.tag}"),
+            game.players.map { it.nickname }.toSet(),
+        )
+        // A single bob: no tag needed, nor shown.
+        val back: GameView = client.post("/api/v1/games") {
+            bearerAuth(alice1.token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateGameRequest(friends = listOf("bob")))
+        }.body()
+        assertEquals(setOf("alice", "bob"), back.players.map { it.nickname }.toSet())
+    }
+
+    @Test
+    fun deletedAccountResignsItsGamesWithPeopleAndLosesTheOthers() = withApp(listOf(passingBot)) { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val withBob: GameView = client.create(alice.token, CreateGameRequest(friends = listOf("bob"))).body()
+        client.create(alice.token, CreateGameRequest(bots = listOf("nono")))
+        client.post("/api/v1/devices") { bearerAuth(alice.token); contentType(ContentType.Application.Json); setBody(DeviceRequest("phone")) }
+
+        assertEquals(HttpStatusCode.NoContent, client.delete("/api/v1/me") { bearerAuth(alice.token) }.status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/games") { bearerAuth(alice.token) }.status)
+        val seen = client.view(bob.token, withBob.id)
+        assertEquals(GameStatus.FINISHED, seen.status)
+        assertEquals(seen.mySeat, seen.winnerSeat)
+        assertEquals(setOf("bob", "Joueur supprimé"), seen.players.map { it.nickname }.toSet())
+        // Nobody can be invited under the deleted account.
+        val invite = client.create(bob.token, CreateGameRequest(friends = listOf("alice")))
+        assertEquals("UNKNOWN_PLAYER", invite.body<ApiError>().code)
+        assertEquals(HttpStatusCode.OK, client.get("/supprimer-compte").status)
     }
 
     @Test
