@@ -21,7 +21,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.size
@@ -39,6 +38,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.BasicText
@@ -316,7 +316,8 @@ private fun PlayersHeader(game: GameView) {
     }
 }
 
-private fun statusLine(game: GameView, state: GameUiState): String {
+/** Whose turn it is (or the result), in bold, then the rack values deducted at the end. */
+private fun statusLine(game: GameView, state: GameUiState): AnnotatedString {
     val opponent = game.players[game.currentSeat].nickname
     val turn = when {
         game.status == GameStatus.FINISHED -> when (game.winnerSeat) {
@@ -330,7 +331,10 @@ private fun statusLine(game: GameView, state: GameUiState): String {
     // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
     val deductions = game.moves.lastOrNull()?.endAdjustments.orEmpty().withIndex().filter { it.value < 0 }
         .joinToString { (seat, delta) -> "${if (seat == game.mySeat) "toi" else game.players[seat].nickname} $delta" }
-    return if (deductions.isEmpty()) turn else "$turn · lettres restantes : $deductions"
+    return buildAnnotatedString {
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(turn) }
+        if (deductions.isNotEmpty()) append(" · lettres restantes : $deductions")
+    }
 }
 
 /** The previous round: each player's last move, back to the first player who appears twice, oldest first. */
@@ -340,8 +344,8 @@ private fun lastRound(game: GameView): List<MoveView> {
 }
 
 /**
- * "il y a 5 min · NonoBot · WHINE +24", one line per move of the previous round, the player's own move followed
- * by its verdict ("meilleur coup : 29 points"), or against one robot by its grade, which opens the advice.
+ * "**il y a 5 min** · NonoBot · WHINE, WU +24", one paragraph per move of the previous round (every word it
+ * formed, wrapped if need be), the player's own move followed by its verdict ("meilleur coup : 29 points"), or against one robot by its grade, which opens the advice.
  */
 @Composable
 private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -> Unit) {
@@ -361,12 +365,11 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -
             val verdict = if (review != null) "${review.grade}/10 ${review.label()} ›" else own?.verdict
             Text(
                 buildAnnotatedString {
-                    append("${ago(now - m.playedAt)} · $who · ${m.summary()}")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(ago(now - m.playedAt)) }
+                    append(" · $who · ${m.summary()}")
                     if (verdict != null) withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append(" · $verdict") }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier = if (review != null) Modifier.clickable(onClick = onReview) else Modifier,
             )
         }
@@ -374,7 +377,7 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -
 }
 
 private fun MoveView.summary(): String = when (type) {
-    MoveType.PLAY -> "${words.first().word} +$score" + (if (end == GameEnd.OUT) " (+${endAdjustments[seat]} de bonus de fin)" else "")
+    MoveType.PLAY -> "${words.joinToString { it.word }} +$score" + (if (end == GameEnd.OUT) " (+${endAdjustments[seat]} de bonus de fin)" else "")
     MoveType.EXCHANGE -> "échange de $exchangedCount lettre(s)"
     MoveType.PASS -> if (end == GameEnd.BLOCKED) "passe, partie bloquée" else "passe"
     MoveType.RESIGN -> "abandon"

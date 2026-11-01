@@ -10,8 +10,9 @@ Kept: lemmas that are common nouns, adjectives, verbs, adverbs or interjections,
 languages (a good sign of an established word: at least one language, three for verbs since each verb brings
 some fifty conjugated forms), not demonyms, acronyms, abbreviations, symbols, SMS spellings, names or errors;
 plus their inflected forms (plurals, feminines, conjugations).
-Only words of 5 letters or more: short words decide the game and are too noisy here, they are curated
-by hand (dictionaries/additions.txt and the private lists).
+Only words of 5 letters or more, and only from lemmas of 5 letters or more (no GYNES without GYNE): short
+words decide the game and are too noisy here, they are curated by hand (dictionaries/additions.txt and the
+private lists).
 """
 import json
 import re
@@ -66,12 +67,14 @@ for line in sys.stdin:
 
 words = set()
 for lemma in lemmas:
+    if len(lemma) < MIN_LENGTH:
+        continue
     for w in [lemma] + own_forms.get(lemma, []):
         n = normalize(w)
         if n:
             words.add(n)
 for form, targets in form_entries:
-    if any(t in lemmas for t in targets):
+    if any(t in lemmas and len(t) >= MIN_LENGTH for t in targets):
         n = normalize(form)
         if n:
             words.add(n)
