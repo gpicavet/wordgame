@@ -133,6 +133,8 @@ data class FinishedGame(
     val finishedAt: Long,
     /** Turns where the player asked for hints. */
     val hints: Int = 0,
+    /** Share (0 to 1) of the points the player could have scored on their turns; null when unknown. */
+    val share: Double? = null,
 )
 
 @Serializable
@@ -162,4 +164,6 @@ data class PlayerStats(
     val opponents: List<OpponentRecord>,
     /** Turns where the player asked for hints, finished or active games. */
     val hintTurns: Int = 0,
+    /** Share (0 to 1) of the possible points scored over the finished games; null when unknown. */
+    val share: Double? = null,
 )

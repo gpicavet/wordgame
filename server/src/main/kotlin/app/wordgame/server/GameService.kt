@@ -1,14 +1,17 @@
 package app.wordgame.server
 
 import app.wordgame.engine.Action
+import app.wordgame.engine.Board
 import app.wordgame.engine.Game
 import app.wordgame.engine.GameEnd
 import app.wordgame.engine.GameState
 import app.wordgame.engine.GameStatus
+import app.wordgame.engine.Lexicon
 import app.wordgame.engine.MoveOutcome
 import app.wordgame.engine.MoveRecord
 import app.wordgame.engine.MoveType
 import app.wordgame.engine.RuleSet
+import app.wordgame.engine.Solver
 import app.wordgame.engine.WordList
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
@@ -56,6 +59,8 @@ class GameService(
     private val bots: List<ServerBot> = emptyList(),
     /** Checks "Sign in with Google" tokens; null: Google sign-in is off. */
     private val google: GoogleTokens? = null,
+    /** Dictionaries by language for the best move of each turn (the stats' share of possible points); none: no share. */
+    private val lexicons: Map<String, Lexicon> = emptyMap(),
 ) {
     private val botsById = bots.associateBy { it.userId }
 
@@ -245,6 +250,8 @@ class GameService(
         val ids = query("SELECT game_id FROM game_players WHERE user_id = ?", user.id) { it.getString(1) }
         val finished = ArrayList<FinishedGame>()
         val myMoves = ArrayList<Pair<MoveRecord, Pair<String, Long>>>() // move, (opponent, playedAt)
+        var scored = 0 // points scored on the turns whose best score is known, and that best
+        var possible = 0
         var active = 0
         var hintTurns = 0
         for (id in ids) {
@@ -253,15 +260,25 @@ class GameService(
             val seat = game.seatOf(user)
             val opponent = game.opponents(seat)
             val state = game.state
-            query("SELECT record, played_at FROM moves WHERE game_id = ?", id) {
-                ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)) to it.getLong(2)
-            }.filter { it.first.seat == seat }.forEach { (record, at) -> myMoves += record to (opponent to at) }
+            var gameScored = 0
+            var gamePossible = 0
+            query("SELECT record, played_at, best_score FROM moves WHERE game_id = ?", id) {
+                Triple(ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)), it.getLong(2), (it.getObject(3) as? Number)?.toInt() ?: -1)
+            }.filter { it.first.seat == seat }.forEach { (record, at, best) ->
+                myMoves += record to (opponent to at)
+                if (best >= 0) {
+                    gameScored += record.score
+                    gamePossible += best
+                }
+            }
             val hints = query("SELECT COUNT(*) FROM hints WHERE game_id = ? AND user_id = ?", id, user.id) { it.getInt(1) }.single()
             hintTurns += hints
             if (state.status != GameStatus.FINISHED) {
                 active++
                 continue
             }
+            scored += gameScored
+            possible += gamePossible
             val finishedAt = query("SELECT updated_at FROM games WHERE id = ?", id) { it.getLong(1) }.single()
             finished += FinishedGame(
                 gameId = id,
@@ -275,6 +292,7 @@ class GameService(
                 },
                 finishedAt = finishedAt,
                 hints = hints,
+                share = share(gameScored, gamePossible),
             )
         }
         finished.sortBy { it.finishedAt }
@@ -304,8 +322,12 @@ class GameService(
                 )
             }.sortedByDescending { it.wins + it.losses + it.draws },
             hintTurns = hintTurns,
+            share = share(scored, possible),
         )
     }
+
+    /** Share of the possible points actually scored, at most 1 (a turn can't beat the best move). */
+    private fun share(scored: Int, possible: Int) = if (possible > 0) minOf(1.0, scored.toDouble() / possible) else null
 
     /** A game with friends (each at most once) and robots (the same one possibly twice): 2 to 4 players with the caller. */
     suspend fun createGame(user: User, request: CreateGameRequest): GameView = db.tx {
@@ -426,7 +448,7 @@ class GameService(
                 HttpStatusCode.UnprocessableEntity, outcome.error.name, outcome.error.name, outcome.unknownWords,
             )
             is MoveOutcome.Applied -> {
-                save(game.id, outcome.state, outcome.record)
+                save(game.id, outcome.state, outcome.record, bestScore(game.state.rules, game.state.boardModel(), outcome.record))
                 afterMove(game, outcome.state, outcome.record) + playBots(load(gameId))
             }
         }
@@ -540,7 +562,43 @@ class GameService(
         return id
     }
 
-    private fun Connection.save(id: String, state: GameState, record: MoveRecord) {
+    /**
+     * The most points a player's turn could score (rack [MoveRecord.rack] on [board], before the move), to compare
+     * with what they scored; -1 when not known or not counted (robots, resignations, no dictionary).
+     */
+    private fun bestScore(rules: RuleSet, board: Board, record: MoveRecord): Int {
+        if (record.type !in TURNS) return -1
+        val lexicon = lexicons[rules.language] ?: return -1
+        val rack = record.rack ?: return -1
+        return Solver(lexicon, rules).bestMoves(board, rack, 1).firstOrNull()?.score ?: 0
+    }
+
+    /**
+     * Best scores of the turns played before they were recorded (once, at startup): each game is replayed from an
+     * empty board. Robots' turns get -1.
+     */
+    suspend fun backfillBestScores(): Int {
+        if (lexicons.isEmpty()) return 0
+        val gameIds = db.tx { query("SELECT DISTINCT game_id FROM moves WHERE best_score IS NULL") { it.getString(1) } }
+        for (id in gameIds) db.tx {
+            val game = load(id)
+            val rules = game.state.rules
+            var board = Board.empty(rules.boardSize)
+            val moves = query("SELECT move_number, record, best_score FROM moves WHERE game_id = ? ORDER BY move_number", id) {
+                Triple(it.getInt(1), ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(2)), it.getObject(3))
+            }
+            for ((number, record, known) in moves) {
+                if (known == null) {
+                    val best = if (game.seats[record.seat].bot != null) -1 else bestScore(rules, board, record)
+                    update("UPDATE moves SET best_score = ? WHERE game_id = ? AND move_number = ?", best, id, number)
+                }
+                if (record.type == MoveType.PLAY) board = board.with(record.tiles)
+            }
+        }
+        return gameIds.size
+    }
+
+    private fun Connection.save(id: String, state: GameState, record: MoveRecord, bestScore: Int = -1) {
         val t = now()
         update(
             "UPDATE games SET state = ?, status = ?, move_number = ?, deadline = ?, updated_at = ? WHERE id = ?",
@@ -548,8 +606,8 @@ class GameService(
             t + turnTimeout.inWholeMilliseconds, t, id,
         )
         update(
-            "INSERT INTO moves(game_id, move_number, record, played_at) VALUES (?, ?, ?, ?)",
-            id, state.moveNumber, ApiJson.encodeToString(MoveRecord.serializer(), record), t,
+            "INSERT INTO moves(game_id, move_number, record, played_at, best_score) VALUES (?, ?, ?, ?, ?)",
+            id, state.moveNumber, ApiJson.encodeToString(MoveRecord.serializer(), record), t, bestScore,
         )
     }
 
@@ -626,6 +684,8 @@ class GameService(
 
     private companion object {
         const val MAX_ACTIVE_GAMES = 30
+        /** A player's turns, where they chose what to play: the ones compared with the best move. */
+        val TURNS = setOf(MoveType.PLAY, MoveType.PASS, MoveType.EXCHANGE)
         val NICKNAME = Regex("^[A-Za-z0-9_-]{3,16}$")
         /** Prefix of the token hash of an ordinary account (its tokens are in sessions), followed by its id. */
         const val ACCOUNT = "account:"

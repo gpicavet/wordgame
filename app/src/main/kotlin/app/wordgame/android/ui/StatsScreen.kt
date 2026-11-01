@@ -114,6 +114,11 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile("Points trouvés", stats.share?.let { percent(it) } ?: "–", "des points possibles à tes tours")
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val helped = stats.history.count { it.hints > 0 }
                 StatTile("Indices", "${stats.hintTurns}", if (stats.hintTurns == 1) "tour aidé" else "tours aidés")
                 StatTile(
@@ -126,14 +131,22 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
 
         item { SectionTitle("Progression") }
         item {
-            if (stats.history.size < 2) {
-                Text(
-                    "La courbe apparaîtra après 2 parties terminées.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                ScoreChart(stats.history)
+            var byShare by remember { mutableStateOf(false) }
+            val games = if (byShare) stats.history.filter { it.share != null } else stats.history
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !byShare, onClick = { byShare = false }, label = { Text("Score") })
+                    FilterChip(selected = byShare, onClick = { byShare = true }, label = { Text("% des points possibles") })
+                }
+                if (games.size < 2) {
+                    Text(
+                        "La courbe apparaîtra après 2 parties terminées.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    ScoreChart(games, byShare)
+                }
             }
         }
 
@@ -219,12 +232,15 @@ private fun RecordLine(label: String, value: String?) {
     }
 }
 
+private fun percent(share: Double) = "%.0f %%".format(share * 100)
+
 /**
- * Score of each finished game (dot: filled = win, hollow = loss or draw) and its moving average (line).
- * One series hue; win/loss is carried by the dot fill, not by color. Tap a dot for the details.
+ * Score of each finished game, or with [byShare] its share of the possible points (in %), as dots (filled = win,
+ * hollow = loss or draw) and their moving average (line). One series hue; win/loss is carried by the dot fill,
+ * not by color. Tap a dot for the details.
  */
 @Composable
-private fun ScoreChart(history: List<FinishedGame>) {
+private fun ScoreChart(history: List<FinishedGame>, byShare: Boolean) {
     val lineColor = MaterialTheme.colorScheme.primary
     val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.outlineVariant
@@ -233,9 +249,9 @@ private fun ScoreChart(history: List<FinishedGame>) {
     val measurer = rememberTextMeasurer()
     var selected by remember(history) { mutableStateOf(history.lastIndex) }
 
-    val scores = history.map { it.myScore }
+    val scores = history.map { if (byShare) it.share!! * 100 else it.myScore.toDouble() }
     val averages = scores.indices.map { i -> scores.subList(maxOf(0, i - AVERAGE_WINDOW + 1), i + 1).average() }
-    val yMax = (ceil(maxOf(scores.max(), 1) / 100.0) * 100).toFloat()
+    val yMax = if (byShare) 100f else (ceil(maxOf(scores.max(), 1.0) / 100.0) * 100).toFloat()
     // A game can end below zero (tiles left on the rack are subtracted).
     val yMin = if (scores.min() < 0) (floor(scores.min() / 10.0) * 10).toFloat() else 0f
 
@@ -271,7 +287,7 @@ private fun ScoreChart(history: List<FinishedGame>) {
 
             val r = 4.dp.toPx()
             history.forEachIndexed { i, g ->
-                val c = Offset(x(i), y(g.myScore.toDouble()))
+                val c = Offset(x(i), y(scores[i]))
                 drawCircle(surface, r + 2.dp.toPx(), c) // surface ring keeps dots readable over the line
                 if (g.result == GameResult.WIN) drawCircle(dotColor, r, c)
                 else drawCircle(dotColor, r - 0.75.dp.toPx(), c, style = Stroke(1.5.dp.toPx()))
@@ -286,10 +302,11 @@ private fun ScoreChart(history: List<FinishedGame>) {
         }
 
         history.getOrNull(selected)?.let { g ->
+            val average = if (byShare) "%.0f %%".format(averages[selected]) else "%.0f".format(averages[selected])
             Text(
                 "${DATE.format(Instant.ofEpochMilli(g.finishedAt))} contre ${g.opponent} : ${g.myScore} – ${g.opponentScore} " +
-                    "(${when (g.result) { GameResult.WIN -> "victoire"; GameResult.LOSS -> "défaite"; GameResult.DRAW -> "égalité" }}), " +
-                    "moyenne ${"%.0f".format(averages[selected])}",
+                    "(${when (g.result) { GameResult.WIN -> "victoire"; GameResult.LOSS -> "défaite"; GameResult.DRAW -> "égalité" }})" +
+                    (if (byShare) ", ${percent(g.share!!)} des points possibles" else "") + ", moyenne $average",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

@@ -100,7 +100,12 @@ fun main() {
     val googleClientId = env["WORDGAME_GOOGLE_CLIENT_ID"]?.takeIf { it.isNotBlank() }
     val google = googleClientId?.let(::GoogleIdTokens)
     log.info("Google sign-in: {}", if (google != null) "on" else "off (no WORDGAME_GOOGLE_CLIENT_ID)")
-    val service = GameService(db, dictionaries, notifier = notifier, bots = bots, google = google)
+    // The whole dictionaries, for the best move of each turn (stats).
+    val lexicons = buildMap {
+        put("fr", Lexicon(dawg, extra))
+        english?.let { put("en", Lexicon(it)) }
+    }
+    val service = GameService(db, dictionaries, notifier = notifier, bots = bots, google = google, lexicons = lexicons)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
 
     embeddedServer(
@@ -109,6 +114,11 @@ fun main() {
         host = env["WORDGAME_HOST"] ?: "0.0.0.0",
     ) {
         wordgame(service, env["WORDGAME_CONTACT_EMAIL"], googleClientId)
+        launch {
+            runCatching { service.backfillBestScores() }
+                .onSuccess { if (it > 0) log.info("Best scores computed for {} games", it) }
+                .onFailure { log.error("Best scores backfill failed", it) }
+        }
         launch {
             while (isActive) {
                 delay(5.minutes)

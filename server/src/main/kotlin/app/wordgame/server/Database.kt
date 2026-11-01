@@ -136,6 +136,8 @@ class Database(path: String) : AutoCloseable {
             "ALTER TABLE matchmaking ADD COLUMN language TEXT NOT NULL DEFAULT 'fr'",
             // google_sub: the Google account linked by "Sign in with Google" (its stable id), if any.
             "ALTER TABLE users ADD COLUMN google_sub TEXT",
+            // The most points the turn could score (for the stats); -1: not counted; NULL: not computed yet.
+            "ALTER TABLE moves ADD COLUMN best_score INTEGER",
         )
     }
 }
