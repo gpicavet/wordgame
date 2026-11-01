@@ -20,6 +20,8 @@ Environment=WORDGAME_EN_COMMON_DICT=/opt/wordgame/en-courant.dawg
 Environment=WORDGAME_EN_BOT_WEIGHTS=/opt/wordgame/value-en-v1.txt
 # Firebase service-account key; without it the server runs without push notifications.
 Environment=WORDGAME_FCM_CREDENTIALS=/etc/wordgame/fcm-service-account.json
+# Public contact, shown on /confidentialite and /supprimer-compte (Google Play requires both pages).
+Environment=WORDGAME_CONTACT_EMAIL=wordwok.app@gmail.com
 # Measured ~125 MB RSS under load with these limits (Stardust: 1 GB RAM).
 ExecStart=/usr/bin/java -Xmx160m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -XX:+ExitOnOutOfMemoryError -jar /opt/wordgame/wordgame-server.jar
 Restart=always
