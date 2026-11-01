@@ -344,6 +344,16 @@ class ApiTest {
     }
 
     @Test
+    fun signingOutEndsOnlyThatSession() = withApp { client, _ ->
+        val alice = client.register("alice")
+        client.linkGoogle(alice.token, "google-A")
+        val page: AuthResponse = client.signInWithGoogle("google-A").body()
+        assertEquals(HttpStatusCode.NoContent, client.delete("/api/v1/me/session") { bearerAuth(page.token) }.status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/games") { bearerAuth(page.token) }.status)
+        assertEquals(HttpStatusCode.OK, client.get("/api/v1/games") { bearerAuth(alice.token) }.status)
+    }
+
+    @Test
     fun googleSignInIsOffWithoutAClientId() = withApp(google = null) { client, _ ->
         val response = client.signInWithGoogle("google-A")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status)

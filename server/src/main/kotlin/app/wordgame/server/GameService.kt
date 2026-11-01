@@ -147,6 +147,10 @@ class GameService(
         }
     }
 
+    suspend fun signOut(token: String) = db.tx {
+        update("DELETE FROM sessions WHERE token_hash = ?", sha256(token))
+    }
+
     private fun Connection.newSession(user: User): AuthResponse {
         val token = randomToken()
         update("INSERT INTO sessions(token_hash, user_id, created_at) VALUES (?, ?, ?)", sha256(token), user.id, now())

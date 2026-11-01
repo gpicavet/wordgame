@@ -67,24 +67,63 @@ ${contact(contactEmail)}. Tu peux aussi adresser une réclamation à la CNIL (<a
 <p>Pour toute question sur cette politique : ${contact(contactEmail)}.</p>""",
 )
 
-fun accountDeletionPage(contactEmail: String?): String {
-    val byEmail = contactEmail?.let {
-        """<h2>Sans l'application</h2>
-<p>Écris à <a href="mailto:$it?subject=Suppression%20de%20compte%20WordWok">$it</a> en indiquant ton pseudo et son numéro
-(par exemple <b>greg#4821</b>, affiché dans le menu <i>Mon compte</i>). Le compte est supprimé sous 30 jours.</p>"""
+/**
+ * How to delete one's account: in the app, or here for players whose account is linked to Google ([googleClientId]): the Google button proves the account is theirs (POST /api/v1/auth/google), then the page
+ * deletes it (DELETE /api/v1/me), or signs out if they change their mind.
+ */
+fun accountDeletionPage(googleClientId: String?): String {
+    val byGoogle = googleClientId?.let {
+        """<h2>Sans l'application, avec Google</h2>
+<p>Si ton compte est sauvegardé avec Google (menu <i>Mon compte</i>), connecte-toi avec le même compte Google :</p>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<div id="g_id_onload" data-client_id="$it" data-callback="onGoogle" data-auto_prompt="false"></div>
+<div class="g_id_signin" data-type="standard" data-text="signin_with" data-locale="fr"></div>
+<div id="found" hidden>
+<p>Compte trouvé : <b id="name"></b>. Sa suppression est immédiate et définitive.</p>
+<p><button id="delete">Supprimer définitivement ce compte</button> <button id="cancel">Annuler</button></p>
+</div>
+<p id="status" role="status"></p>
+<script>
+let token = null;
+const status = (text) => { document.getElementById("status").textContent = text; };
+async function onGoogle(response) {
+  status("Recherche du compte…");
+  const r = await fetch("/api/v1/auth/google", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: response.credential }),
+  });
+  const body = await r.json();
+  if (!r.ok) { status(body.message || "Erreur"); return; }
+  token = body.token;
+  document.getElementById("name").textContent = body.nickname + "#" + body.tag;
+  document.getElementById("found").hidden = false;
+  status("");
+}
+document.getElementById("delete").onclick = async () => {
+  const r = await fetch("/api/v1/me", { method: "DELETE", headers: { Authorization: "Bearer " + token } });
+  document.getElementById("found").hidden = true;
+  status(r.ok ? "Ton compte a été supprimé." : "La suppression a échoué, réessaie plus tard.");
+  token = null;
+};
+document.getElementById("cancel").onclick = async () => {
+  await fetch("/api/v1/me/session", { method: "DELETE", headers: { Authorization: "Bearer " + token } });
+  document.getElementById("found").hidden = true;
+  status("Rien n'a été supprimé.");
+  token = null;
+};
+</script>"""
     }.orEmpty()
     return page(
         "Supprimer son compte",
         """<h1>Supprimer son compte WordWok</h1>
 <h2>Dans l'application</h2>
 <p>Sur l'écran des parties, ouvre le menu <i>Mon compte</i>, puis touche <b>Supprimer mon compte</b> et confirme.</p>
-$byEmail
+$byGoogle
 <h2>Ce qui est supprimé</h2>
 <ul>
 <li>ton pseudo et son numéro, l'accès au compte et son lien avec ton compte Google ;</li>
 <li>les jetons de notification de tes téléphones ;</li>
 <li>tes parties contre des robots, et tes demandes d'indices ;</li>
-<li>les parties solo enregistrées sur le téléphone.</li>
+<li>depuis l'application, les parties solo enregistrées sur le téléphone (sinon, elles disparaissent en désinstallant l'application).</li>
 </ul>
 <p>Les sauvegardes quotidiennes du serveur sont détruites au bout de 14 jours.</p>
 <h2>Ce qui est conservé</h2>

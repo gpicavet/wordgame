@@ -15,6 +15,7 @@ import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -96,7 +97,8 @@ fun main() {
         english?.let { put("en", it) }
     }
     // "Sign in with Google": the Web OAuth client id of the Google Cloud project (the app's serverClientId).
-    val google = env["WORDGAME_GOOGLE_CLIENT_ID"]?.takeIf { it.isNotBlank() }?.let(::GoogleIdTokens)
+    val googleClientId = env["WORDGAME_GOOGLE_CLIENT_ID"]?.takeIf { it.isNotBlank() }
+    val google = googleClientId?.let(::GoogleIdTokens)
     log.info("Google sign-in: {}", if (google != null) "on" else "off (no WORDGAME_GOOGLE_CLIENT_ID)")
     val service = GameService(db, dictionaries, notifier = notifier, bots = bots, google = google)
     log.info("Dictionary {}: {} edges, database {}", dictPath, dawg.edgeCount, dbPath)
@@ -106,7 +108,7 @@ fun main() {
         port = env["WORDGAME_PORT"]?.toInt() ?: 8080,
         host = env["WORDGAME_HOST"] ?: "0.0.0.0",
     ) {
-        wordgame(service, env["WORDGAME_CONTACT_EMAIL"])
+        wordgame(service, env["WORDGAME_CONTACT_EMAIL"], googleClientId)
         launch {
             while (isActive) {
                 delay(5.minutes)
@@ -118,8 +120,11 @@ fun main() {
     }.start(wait = true)
 }
 
-/** [contactEmail]: where players without the app can ask for their account to be deleted. */
-fun Application.wordgame(service: GameService, contactEmail: String? = null) {
+/**
+ * [contactEmail]: shown on the privacy policy. [googleClientId]: for the Google button of the deletion page
+ * (players whose account is linked to Google delete it there, without the app).
+ */
+fun Application.wordgame(service: GameService, contactEmail: String? = null, googleClientId: String? = null) {
     install(ContentNegotiation) { json(ApiJson) }
     install(CallLogging) {
         level = Level.INFO
@@ -144,7 +149,7 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null) {
     routing {
         get("/health") { call.respondText("ok") }
         // Required by Google Play: how to delete one's account, reachable without the app.
-        get("/supprimer-compte") { call.respondText(accountDeletionPage(contactEmail), ContentType.Text.Html) }
+        get("/supprimer-compte") { call.respondText(accountDeletionPage(googleClientId), ContentType.Text.Html) }
         // Required by Google Play too: the privacy policy, linked from the store listing and the app.
         get("/confidentialite") { call.respondText(privacyPage(contactEmail), ContentType.Text.Html) }
 
@@ -159,6 +164,11 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null) {
                 get("/me") {
                     val user = call.user()
                     call.respond(Me(user.id, user.nickname, user.tag, user.google))
+                }
+                // Signs this phone (or the deletion page) out: its token stops working.
+                delete("/me/session") {
+                    service.signOut(call.request.headers[HttpHeaders.Authorization].orEmpty().removePrefix("Bearer ").trim())
+                    call.respond(HttpStatusCode.NoContent)
                 }
                 post("/me/google") {
                     service.linkGoogle(call.user(), call.receive<GoogleRequest>().idToken)
