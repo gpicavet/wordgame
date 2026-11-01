@@ -141,6 +141,8 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null) {
         get("/health") { call.respondText("ok") }
         // Required by Google Play: how to delete one's account, reachable without the app.
         get("/supprimer-compte") { call.respondText(accountDeletionPage(contactEmail), ContentType.Text.Html) }
+        // Required by Google Play too: the privacy policy, linked from the store listing and the app.
+        get("/confidentialite") { call.respondText(privacyPage(contactEmail), ContentType.Text.Html) }
 
         route("/api/v1") {
             post("/auth/register") {
@@ -190,31 +192,3 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null) {
 }
 
 private fun ApplicationCall.user(): User = principal<User>()!!
-
-private fun accountDeletionPage(contactEmail: String?): String {
-    val byEmail = contactEmail?.let {
-        """<h2>Sans l'application</h2>
-<p>Écris à <a href="mailto:$it?subject=Suppression%20de%20compte%20WordWok">$it</a> en indiquant ton pseudo et son numéro
-(par exemple <b>greg#4821</b>, affiché dans le menu <i>Mon compte</i>). Le compte est supprimé sous 30 jours.</p>"""
-    }.orEmpty()
-    return """<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WordWok — Supprimer son compte</title>
-<style>body{font-family:system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em;line-height:1.5}</style></head>
-<body>
-<h1>Supprimer son compte WordWok</h1>
-<h2>Dans l'application</h2>
-<p>Sur l'écran des parties, ouvre le menu <i>Mon compte</i>, puis touche <b>Supprimer mon compte</b> et confirme.</p>
-$byEmail
-<h2>Ce qui est supprimé</h2>
-<ul>
-<li>ton pseudo et ton numéro, et l'accès au compte ;</li>
-<li>les jetons de notification de tes téléphones ;</li>
-<li>tes parties contre des robots, et tes demandes d'indices ;</li>
-<li>les parties solo enregistrées sur le téléphone.</li>
-</ul>
-<h2>Ce qui est conservé</h2>
-<p>Les parties jouées contre d'autres joueurs restent visibles pour eux, sous le nom « Joueur supprimé », sans lien avec toi.
-Tu abandonnes les parties encore en cours.</p>
-</body></html>"""
-}

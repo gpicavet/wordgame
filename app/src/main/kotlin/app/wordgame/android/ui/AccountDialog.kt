@@ -13,9 +13,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wordgame.android.ApiClient
+import app.wordgame.android.BuildConfig
 import app.wordgame.android.attempt
 import kotlinx.coroutines.launch
 
@@ -66,6 +68,8 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (tag > 0) "$nickname#$tag" else nickname, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Donne ce nom à tes amis pour qu'ils t'invitent : d'autres joueurs peuvent avoir le même pseudo.")
+                val uriHandler = LocalUriHandler.current
+                TextButton(onClick = { uriHandler.openUri("${BuildConfig.API_URL}/confidentialite") }) { Text("Politique de confidentialité") }
                 TextButton(onClick = { confirming = true }) { Text("Supprimer mon compte", color = MaterialTheme.colorScheme.error) }
             }
         },

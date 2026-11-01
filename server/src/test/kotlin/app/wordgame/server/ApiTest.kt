@@ -328,6 +328,7 @@ class ApiTest {
         val invite = client.create(bob.token, CreateGameRequest(friends = listOf("alice")))
         assertEquals("UNKNOWN_PLAYER", invite.body<ApiError>().code)
         assertEquals(HttpStatusCode.OK, client.get("/supprimer-compte").status)
+        assertEquals(HttpStatusCode.OK, client.get("/confidentialite").status)
     }
 
     @Test

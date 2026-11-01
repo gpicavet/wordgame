@@ -37,6 +37,11 @@ install -m 644 "$SRC/Caddyfile" /etc/caddy/Caddyfile
 # Nightly backup with a systemd timer: works on minimal images that ship without cron.
 install -m 644 "$SRC/wordgame-backup.service" "$SRC/wordgame-backup.timer" /etc/systemd/system/
 
+# Logs kept 30 days at most, as the privacy policy says (/confidentialite).
+mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nMaxRetentionSec=30day\n' > /etc/systemd/journald.conf.d/wordgame.conf
+systemctl restart systemd-journald
+
 systemctl daemon-reload
 systemctl enable wordgame
 systemctl restart wordgame
