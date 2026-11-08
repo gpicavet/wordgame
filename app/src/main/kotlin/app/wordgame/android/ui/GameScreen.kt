@@ -1,5 +1,8 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.platform.LocalContext
+import app.wordgame.android.ads.HintQuota
+import app.wordgame.android.ads.findActivity
 import androidx.compose.ui.res.stringResource
 import app.wordgame.android.R
 import app.wordgame.android.Strings
@@ -108,6 +111,8 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     var exchanging by remember { mutableStateOf(false) }
     var showHints by remember { mutableStateOf(false) }
     var playerSeat by remember { mutableStateOf<Int?>(null) }
+    var askVideo by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(gameId) { Push.gameUpdates.collect { if (it == gameId) vm.refresh() } }
 
@@ -258,7 +263,17 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
         GameActionsDialog(
             state,
             onDismiss = { menuOpen = false },
-            onHints = { menuOpen = false; showHints = true },
+            onHints = {
+                menuOpen = false
+                val g = state.game
+                // With ads: a few free turns a day, then a short video per turn.
+                if (g == null || !container.ads.enabled || container.hintQuota.isFree(g.id, g.moveNumber)) {
+                    g?.let { container.hintQuota.use(it.id, it.moveNumber) }
+                    showHints = true
+                } else {
+                    askVideo = true
+                }
+            },
             onExchange = { menuOpen = false; exchanging = true },
             onPass = { menuOpen = false; vm.pass() },
             onResign = { menuOpen = false; confirmResign = true },
@@ -279,6 +294,27 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     val reported = playerSeat
     if (reported != null && game != null) {
         PlayerDialog(container.api, gameId, reported, game.players[reported].nickname, onDismiss = { playerSeat = null })
+    }
+    if (askVideo) {
+        AlertDialog(
+            onDismissRequest = { askVideo = false },
+            title = { Text(stringResource(R.string.hints)) },
+            text = { Text(stringResource(R.string.hints_video_text, HintQuota.FREE_PER_DAY)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    askVideo = false
+                    val g = state.game
+                    val unlock = {
+                        g?.let { container.hintQuota.use(it.id, it.moveNumber) }
+                        showHints = true
+                    }
+                    // No video to show (none loaded, no consent…): the hints anyway, the player is not to blame.
+                    val activity = context.findActivity()
+                    if (activity == null) unlock() else container.ads.showRewarded(activity, onReward = unlock, onUnavailable = unlock)
+                }) { Text(stringResource(R.string.hints_video_watch)) }
+            },
+            dismissButton = { TextButton(onClick = { askVideo = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     if (showHints) HintsDialog(load = vm::hints, onDismiss = { showHints = false })
     if (showUnseen) state.game?.let { UnseenTilesDialog(it, onDismiss = { showUnseen = false }) }

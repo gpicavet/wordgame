@@ -1,5 +1,8 @@
 package app.wordgame.android
 
+import app.wordgame.android.ads.Ads
+import app.wordgame.android.ads.HintQuota
+import app.wordgame.android.ads.createAds
 import android.app.Application
 import android.content.Context
 import app.wordgame.engine.Afterstate
@@ -73,6 +76,9 @@ class AppContainer(context: Context) {
     val session = Session(context)
     val api = ApiClient(session)
     val dictionary = DictionaryLoader(context)
+    /** Off (no ad SDK) unless built with -Pads=true. */
+    val ads: Ads = createAds(context)
+    val hintQuota = HintQuota(context)
     /** One solo game per robot and language. */
     val solo: List<SoloStore> = SoloBot.entries.flatMap { bot -> RuleSet.LANGUAGES.map { SoloStore(context, dictionary, session, bot, it) } }
 

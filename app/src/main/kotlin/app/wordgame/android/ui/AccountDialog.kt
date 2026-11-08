@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.ads.Ads
+import app.wordgame.android.ads.findActivity
 import androidx.compose.ui.res.stringResource
 import app.wordgame.android.R
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +37,7 @@ import kotlinx.coroutines.launch
  * and the deletion of the account, confirmed first. [onDeleted] runs once the server has deleted it.
  */
 @Composable
-fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Unit, onDismiss: () -> Unit) {
+fun AccountDialog(api: ApiClient, nickname: String, ads: Ads, onDeleted: suspend () -> Unit, onDismiss: () -> Unit) {
     var tag by remember { mutableStateOf(api.session.tag) }
     var google by remember { mutableStateOf<Boolean?>(null) }
     var confirming by remember { mutableStateOf(false) }
@@ -113,6 +115,10 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 val uriHandler = LocalUriHandler.current
+                // Required by the consent rules wherever consent to ads was asked.
+                if (ads.privacyOptionsRequired) {
+                    TextButton(onClick = { context.findActivity()?.let(ads::showPrivacyOptions) }) { Text(stringResource(R.string.ads_privacy_options)) }
+                }
                 val privacyPath = stringResource(R.string.privacy_path)
                 TextButton(onClick = { uriHandler.openUri("${BuildConfig.API_URL}$privacyPath") }) { Text(stringResource(R.string.privacy_policy)) }
                 TextButton(onClick = { confirming = true }) { Text(stringResource(R.string.delete_my_account), color = MaterialTheme.colorScheme.error) }

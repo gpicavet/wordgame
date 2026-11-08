@@ -39,6 +39,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) notifiedGame.value = intent.getStringExtra(EXTRA_GAME_ID)
         val container = (application as WordgameApplication).container
+        // Consent form where required, then the ad SDK: only in builds with ads.
+        if (container.ads.enabled) container.ads.start(this)
         setContent {
             WordgameTheme {
                 WordgameApp(container, notifiedGame.value, onNotifiedGameOpened = { notifiedGame.value = null })
@@ -109,7 +111,7 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
     }
     if (showAccount && nickname != null) {
         AccountDialog(
-            container.api, nickname!!,
+            container.api, nickname!!, container.ads,
             // Deleted on the server: forget it on the phone too, solo games included, and start over.
             onDeleted = {
                 container.solo.forEach { it.delete() }

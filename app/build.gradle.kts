@@ -13,6 +13,12 @@ if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google
 
 // Upload key for Google Play (secrets/, not committed): storeFile, storePassword, keyAlias, keyPassword.
 // Without it, release builds are unsigned (see README, "Publication").
+// Ads (AdMob): off by default, then the app contains no ad SDK. -Pads=true compiles them in (app/src/ads), with
+// Google's test ids unless -PadmobAppId=ca-app-pub-…~… and -PadmobRewardedId=ca-app-pub-…/… are given.
+val ads = project.findProperty("ads") == "true"
+val admobAppId = project.findProperty("admobAppId")?.toString() ?: "ca-app-pub-3940256099942544~3347511713"
+val admobRewardedId = project.findProperty("admobRewardedId")?.toString() ?: "ca-app-pub-3940256099942544/5224354917"
+
 val signing = rootProject.file("secrets/keystore.properties").takeIf { it.exists() }
     ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
 
@@ -32,6 +38,9 @@ android {
         // "Sign in with Google": the Web OAuth client id of the Google Cloud project, the server's
         // WORDGAME_GOOGLE_CLIENT_ID (-PgoogleClientId=… or gradle.properties). Empty: the buttons are hidden.
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${project.findProperty("googleClientId") ?: ""}\"")
+        buildConfigField("String", "ADMOB_REWARDED_ID", "\"$admobRewardedId\"")
+        // Read by the ad SDK only, absent from the default build.
+        manifestPlaceholders["admobAppId"] = admobAppId
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://vps-0483f9f2.vps.ovh.ca"}\"")
     }
 
@@ -69,6 +78,8 @@ android {
     sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/bin"))
     // Private word lists (not committed): bundled when present.
     sourceSets["main"].assets.srcDir(rootProject.file("dictionaries/private"))
+    // With or without ads (see "ads" above).
+    sourceSets["main"].java.srcDir(if (ads) "src/ads/kotlin" else "src/noads/kotlin")
     // Learned weights of the expert bot (trainer module).
     sourceSets["main"].assets.srcDir(rootProject.file("models"))
 }
@@ -77,6 +88,10 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
     implementation(project(":protocol"))
+    if (ads) {
+        implementation(libs.play.services.ads)
+        implementation(libs.ump)
+    }
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

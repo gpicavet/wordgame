@@ -135,4 +135,7 @@
     </plurals>
     <string name="my_stats">My stats</string>
     <string name="back">Back</string>
+    <string name="hints_video_text">You have used your %1$d free hints today. Watch a short video to see the hints for this turn.</string>
+    <string name="hints_video_watch">Watch a video</string>
+    <string name="ads_privacy_options">Ad privacy settings</string>
 </resources>

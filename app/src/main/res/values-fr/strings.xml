@@ -134,4 +134,7 @@
     </plurals>
     <string name="my_stats">Mes statistiques</string>
     <string name="back">Retour</string>
+    <string name="hints_video_text">Tu as utilisé tes %1$d indices gratuits du jour. Regarde une courte vidéo pour voir les indices de ce tour.</string>
+    <string name="hints_video_watch">Regarder une vidéo</string>
+    <string name="ads_privacy_options">Confidentialité des publicités</string>
 </resources>

@@ -151,6 +151,26 @@ Garder la clé et ses mots de passe en lieu sûr (gestionnaire de mots de passe,
 
 Une version signée ne s'installe pas par-dessus une version debug (signatures différentes) : il faut désinstaller, ce qui perd le jeton du compte.
 
+## Publicité (AdMob, désactivée par défaut)
+
+Par défaut, l'app ne contient aucun SDK publicitaire (ni permission d'identifiant publicitaire, ni rien à déclarer). `-Pads=true` compile `app/src/ads` au lieu de `app/src/noads` : AdMob et le formulaire de consentement de Google (UMP). La seule publicité est une **vidéo récompensée choisie par le joueur** : 3 tours avec indices gratuits par jour (contre les robots), puis une courte vidéo par tour (`HintQuota`). Sans vidéo disponible ou sans consentement, les indices s'affichent quand même. Un bouton *Confidentialité des publicités* apparaît dans *Mon compte* là où le consentement est demandé (UE, Royaume-Uni…).
+
+```bash
+./gradlew :app:installDebug -Pads=true    # identifiants de test de Google : vidéos de démonstration
+./gradlew :app:bundleRelease -Pads=true -PadmobAppId=ca-app-pub-…~… -PadmobRewardedId=ca-app-pub-…/…
+```
+
+Avant d'activer en production :
+
+1. Compte AdMob : créer l'application (paquet `app.wordgame.android`) et un bloc d'annonces *Avec récompense* ; renseigner les infos fiscales et de paiement.
+2. AdMob, *Confidentialité et messages* : créer le message de consentement RGPD (et États-Unis si besoin). Sans lui, le formulaire ne s'affiche pas.
+3. `app-ads.txt` : servir la ligne donnée par AdMob à la racine du site déclaré dans la fiche Play.
+4. Politique de confidentialité (`LegalPages.kt`, les deux langues) : AdMob/Google comme destinataire, identifiant publicitaire, consentement et comment le retirer.
+5. Console Play : *Contient des annonces* = oui ; *Identifiant publicitaire* = oui (publicité) ; *Sécurité des données* : identifiants de l'appareil, données d'utilisation et diagnostics partagés avec Google à des fins publicitaires ; public cible 13 ans et plus. Retirer « No ads / Aucune publicité » de `store/listing.md`.
+6. Ne jamais toucher ses propres annonces réelles : tester avec les identifiants de test (par défaut) ou en déclarant son téléphone comme appareil de test dans AdMob.
+
+`play-services-ads` est en 24.9 : les versions 25.x sont compilées avec Kotlin 2.3, plus récent que celui du projet (2.1).
+
 ## Pas encore dans le MVP
 
 iOS (et la récupération du compte avec Apple). Sans compte Google associé, `GameService.releaseAccount` permet de reprendre un compte à la main. Zoom sur le plateau. Rappel avant la perte d'une partie au bout de 72 h. Copie des sauvegardes hors du serveur.
