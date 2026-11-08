@@ -1,5 +1,8 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
+import app.wordgame.android.Strings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -82,7 +85,7 @@ import app.wordgame.protocol.MoveView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
-/** The name the server gives to players who deleted their account. */
+/** The name older servers give to players who deleted their account (newer ones set PlayerView.deleted). */
 private const val DELETED_PLAYER = "Joueur supprimé"
 
 /** Size of the tile under the finger, and how far above the finger it is drawn so it stays visible. */
@@ -130,9 +133,9 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                         // Other people (not robots, not deleted accounts) can be reported or blocked from here.
                         PlayersHeader(game, onPlayer = { seat ->
                             val p = game.players[seat]
-                            if (seat != game.mySeat && !p.bot && p.nickname != DELETED_PLAYER) playerSeat = seat
+                            if (seat != game.mySeat && !p.bot && !p.deleted && p.nickname != DELETED_PLAYER) playerSeat = seat
                         })
-                    } else Text("Chargement…")
+                    } else Text(stringResource(R.string.loading))
                 },
                 navigationIcon = {
                     BackButton(onBack)
@@ -212,18 +215,18 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                 RackView(state, rules, drag, rackTarget, onTap = vm::selectRackTile, onDrop = onDrop)
                 if (game.status == GameStatus.FINISHED) {
                     Button(onClick = { showAnalysis = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                        Text("Analyse de la partie")
+                        Text(stringResource(R.string.game_analysis))
                     }
                 } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = vm::play,
                         enabled = state.myTurn && !state.busy && state.preview?.valid == true,
                         modifier = Modifier.weight(1f),
-                    ) { Text("Jouer") }
+                    ) { Text(stringResource(R.string.play)) }
                     if (state.tentative.isNotEmpty()) {
-                        OutlinedButton(onClick = vm::recall) { Text("Reprendre") }
+                        OutlinedButton(onClick = vm::recall) { Text(stringResource(R.string.recall)) }
                     } else {
-                        OutlinedButton(onClick = vm::shuffle) { Text("Mélanger") }
+                        OutlinedButton(onClick = vm::shuffle) { Text(stringResource(R.string.shuffle)) }
                     }
                 }
             }
@@ -282,18 +285,18 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Supprimer la partie ?") },
-            text = { Text("Elle disparaîtra aussi chez ton adversaire.") },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; vm.delete(onDeleted = onBack) }) { Text("Supprimer") } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+            title = { Text(stringResource(R.string.delete_game_title)) },
+            text = { Text(stringResource(R.string.delete_game_text)) },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; vm.delete(onDeleted = onBack) }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     if (confirmResign) {
         AlertDialog(
             onDismissRequest = { confirmResign = false },
-            title = { Text("Abandonner la partie ?") },
-            confirmButton = { TextButton(onClick = { confirmResign = false; vm.resign() }) { Text("Abandonner") } },
-            dismissButton = { TextButton(onClick = { confirmResign = false }) { Text("Continuer") } },
+            title = { Text(stringResource(R.string.resign_title)) },
+            confirmButton = { TextButton(onClick = { confirmResign = false; vm.resign() }) { Text(stringResource(R.string.resign)) } },
+            dismissButton = { TextButton(onClick = { confirmResign = false }) { Text(stringResource(R.string.keep_playing)) } },
         )
     }
 }
@@ -338,19 +341,19 @@ private fun statusLine(game: GameView, state: GameUiState): AnnotatedString {
     val opponent = game.players[game.currentSeat].nickname
     val turn = when {
         game.status == GameStatus.FINISHED -> when (game.winnerSeat) {
-            game.mySeat -> "Partie gagnée !"
-            null -> "Égalité"
-            else -> "Partie perdue"
+            game.mySeat -> Strings.get(R.string.status_won)
+            null -> Strings.get(R.string.status_draw)
+            else -> Strings.get(R.string.status_lost)
         }
-        state.myTurn -> "À toi de jouer"
-        else -> "Au tour de $opponent"
+        state.myTurn -> Strings.get(R.string.status_your_turn)
+        else -> Strings.get(R.string.status_their_turn, opponent)
     }
     // Rack values deducted at the end (blocked game, or the loser's rack when the other went out).
     val deductions = game.moves.lastOrNull()?.endAdjustments.orEmpty().withIndex().filter { it.value < 0 }
-        .joinToString { (seat, delta) -> "${if (seat == game.mySeat) "toi" else game.players[seat].nickname} $delta" }
+        .joinToString { (seat, delta) -> "${if (seat == game.mySeat) Strings.get(R.string.you_lower) else game.players[seat].nickname} $delta" }
     return buildAnnotatedString {
         withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(turn) }
-        if (deductions.isNotEmpty()) append(" · lettres restantes : $deductions")
+        if (deductions.isNotEmpty()) append(Strings.get(R.string.remaining_tiles, deductions))
     }
 }
 
@@ -376,7 +379,7 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -
     Column {
         for (m in lastRound(game)) {
             val mine = m.seat == game.mySeat
-            val who = if (mine) "Toi" else game.players[m.seat].nickname
+            val who = if (mine) stringResource(R.string.you) else game.players[m.seat].nickname
             val own = analysis?.takeIf { mine && it.move.moveNumber == m.moveNumber }
             val review = own?.review
             val verdict = if (review != null) "${review.grade}/10 ${review.label()} ›" else own?.verdict
@@ -394,20 +397,20 @@ private fun RoundJournal(game: GameView, analysis: MoveAnalysis?, onReview: () -
 }
 
 private fun MoveView.summary(): String = when (type) {
-    MoveType.PLAY -> "${words.joinToString { it.word }} +$score" + (if (end == GameEnd.OUT) " (+${endAdjustments[seat]} de bonus de fin)" else "")
-    MoveType.EXCHANGE -> "échange de $exchangedCount lettre(s)"
-    MoveType.PASS -> if (end == GameEnd.BLOCKED) "passe, partie bloquée" else "passe"
-    MoveType.RESIGN -> "abandon"
-    MoveType.TIMEOUT -> "temps dépassé"
+    MoveType.PLAY -> "${words.joinToString { it.word }} +$score" + (if (end == GameEnd.OUT) Strings.get(R.string.move_end_bonus, endAdjustments[seat]) else "")
+    MoveType.EXCHANGE -> Strings.plural(R.plurals.move_exchange, exchangedCount, exchangedCount)
+    MoveType.PASS -> Strings.get(if (end == GameEnd.BLOCKED) R.string.move_pass_blocked else R.string.move_pass)
+    MoveType.RESIGN -> Strings.get(R.string.move_resign)
+    MoveType.TIMEOUT -> Strings.get(R.string.move_timeout)
 }
 
 private fun ago(millis: Long): String {
     val minutes = millis / 60_000
     return when {
-        minutes < 1 -> "à l'instant"
-        minutes < 60 -> "il y a $minutes min"
-        minutes < 24 * 60 -> "il y a ${minutes / 60} h"
-        else -> "il y a ${minutes / (24 * 60)} j"
+        minutes < 1 -> Strings.get(R.string.ago_now)
+        minutes < 60 -> Strings.get(R.string.ago_minutes, minutes.toInt())
+        minutes < 24 * 60 -> Strings.get(R.string.ago_hours, (minutes / 60).toInt())
+        else -> Strings.get(R.string.ago_days, (minutes / (24 * 60)).toInt())
     }
 }
 
@@ -578,24 +581,24 @@ private fun GameActionsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Actions") },
+        title = { Text(stringResource(R.string.actions)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.hintsAllowed) OutlinedButton(onClick = onHints, modifier = Modifier.fillMaxWidth()) { Text("Indices") }
+                if (state.hintsAllowed) OutlinedButton(onClick = onHints, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.hints)) }
                 if (state.myTurn) {
-                    OutlinedButton(onClick = onExchange, modifier = Modifier.fillMaxWidth()) { Text("Échanger des lettres") }
-                    OutlinedButton(onClick = onPass, modifier = Modifier.fillMaxWidth()) { Text("Passer mon tour") }
-                    OutlinedButton(onClick = onResign, modifier = Modifier.fillMaxWidth()) { Text("Abandonner") }
+                    OutlinedButton(onClick = onExchange, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.exchange_tiles)) }
+                    OutlinedButton(onClick = onPass, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pass_turn)) }
+                    OutlinedButton(onClick = onResign, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.resign)) }
                 }
                 if (state.canDelete) {
                     OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                        Text("Supprimer la partie", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.delete_game), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 
@@ -603,7 +606,7 @@ private fun GameActionsDialog(
 private fun BlankLetterDialog(onChoose: (Char?) -> Unit) {
     AlertDialog(
         onDismissRequest = { onChoose(null) },
-        title = { Text("Lettre du joker") },
+        title = { Text(stringResource(R.string.blank_letter)) },
         text = {
             LazyVerticalGrid(GridCells.Fixed(6)) {
                 items(('A'..'Z').toList()) { letter ->
@@ -612,7 +615,7 @@ private fun BlankLetterDialog(onChoose: (Char?) -> Unit) {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = { onChoose(null) }) { Text("Annuler") } },
+        dismissButton = { TextButton(onClick = { onChoose(null) }) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -621,7 +624,7 @@ private fun ExchangeDialog(state: GameUiState, onDismiss: () -> Unit, onConfirm:
     var chosen by remember { mutableStateOf(emptySet<Int>()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Échanger des lettres") },
+        title = { Text(stringResource(R.string.exchange_tiles)) },
         text = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 state.rack.forEachIndexed { i, tile ->
@@ -634,7 +637,7 @@ private fun ExchangeDialog(state: GameUiState, onDismiss: () -> Unit, onConfirm:
                 }
             }
         },
-        confirmButton = { TextButton(enabled = chosen.isNotEmpty(), onClick = { onConfirm(chosen) }) { Text("Échanger") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+        confirmButton = { TextButton(enabled = chosen.isNotEmpty(), onClick = { onConfirm(chosen) }) { Text(stringResource(R.string.exchange)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

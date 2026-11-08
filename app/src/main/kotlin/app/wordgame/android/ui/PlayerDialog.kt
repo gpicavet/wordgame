@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,9 +30,9 @@ import app.wordgame.protocol.ReportReason
 import kotlinx.coroutines.launch
 
 private val REASONS = listOf(
-    ReportReason.NICKNAME to "Pseudo injurieux ou choquant",
-    ReportReason.CHEATING to "Triche",
-    ReportReason.OTHER to "Autre",
+    ReportReason.NICKNAME to R.string.report_reason_nickname,
+    ReportReason.CHEATING to R.string.report_reason_cheating,
+    ReportReason.OTHER to R.string.report_reason_other,
 )
 
 /**
@@ -63,32 +65,33 @@ fun PlayerDialog(api: ApiClient, gameId: String, seat: Int, nickname: String, on
             onDismissRequest = onDismiss,
             title = { Text(nickname) },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         )
         return
     }
 
     if (reporting) {
+        val sentText = if (alsoBlock) stringResource(R.string.report_sent_blocked, nickname) else stringResource(R.string.report_sent)
         AlertDialog(
             onDismissRequest = { if (!busy) onDismiss() },
-            title = { Text("Signaler $nickname") },
+            title = { Text(stringResource(R.string.report_title, nickname)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     REASONS.forEach { (r, label) ->
                         Row(Modifier.fillMaxWidth().clickable { reason = r }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = reason == r, onClick = { reason = r })
-                            Text(label)
+                            Text(stringResource(label))
                         }
                     }
                     OutlinedTextField(
                         value = details,
                         onValueChange = { details = it.take(500) },
-                        label = { Text("Précisions (facultatif)") },
+                        label = { Text(stringResource(R.string.report_details)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(Modifier.fillMaxWidth().clickable { alsoBlock = !alsoBlock }, verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = alsoBlock, onCheckedChange = { alsoBlock = it })
-                        Text("Bloquer aussi ce joueur")
+                        Text(stringResource(R.string.also_block))
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
@@ -96,13 +99,10 @@ fun PlayerDialog(api: ApiClient, gameId: String, seat: Int, nickname: String, on
             confirmButton = {
                 TextButton(enabled = !busy && reason != null, onClick = {
                     val r = reason ?: return@TextButton
-                    send(
-                        { api.report(gameId, seat, r, details.ifBlank { null }, alsoBlock) },
-                        "Merci, ton signalement a été envoyé." + if (alsoBlock) " $nickname est bloqué." else "",
-                    )
-                }) { Text("Envoyer") }
+                    send({ api.report(gameId, seat, r, details.ifBlank { null }, alsoBlock) }, sentText)
+                }) { Text(stringResource(R.string.send)) }
             },
-            dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Annuler") } },
+            dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         )
         return
     }
@@ -112,14 +112,15 @@ fun PlayerDialog(api: ApiClient, gameId: String, seat: Int, nickname: String, on
         title = { Text(nickname, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Bloquer ce joueur : vous ne pourrez plus vous défier, ni être associés au hasard. Cette partie continue.")
+                Text(stringResource(R.string.block_explain))
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                TextButton(enabled = !busy, onClick = { send({ api.block(gameId, seat) }, "$nickname est bloqué. Tu peux le débloquer dans Mon compte.") }) {
-                    Text("Bloquer")
+                val blockedText = stringResource(R.string.blocked_done, nickname)
+                TextButton(enabled = !busy, onClick = { send({ api.block(gameId, seat) }, blockedText) }) {
+                    Text(stringResource(R.string.block))
                 }
-                TextButton(enabled = !busy, onClick = { reporting = true }) { Text("Signaler", color = MaterialTheme.colorScheme.error) }
+                TextButton(enabled = !busy, onClick = { reporting = true }) { Text(stringResource(R.string.report), color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }

@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,15 +28,14 @@ fun UpgradeScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Mise à jour nécessaire", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.upgrade_title), style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Une nouvelle version de l'application est disponible. Mets-la à jour pour continuer tes parties : " +
-                    "elles t'attendent.",
+                stringResource(R.string.upgrade_text),
                 textAlign = TextAlign.Center,
             )
             Button(onClick = {
                 uriHandler.openUri("https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}")
-            }) { Text("Mettre à jour") }
+            }) { Text(stringResource(R.string.upgrade_button)) }
         }
     }
 }

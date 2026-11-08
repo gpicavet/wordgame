@@ -14,14 +14,14 @@ import java.text.Normalizer
  */
 object Nicknames {
     /** Why [nickname] is refused, or null when it is fine. */
-    fun refusal(nickname: String): String? {
+    fun refusal(nickname: String): Text? {
         val parts = nickname.split('_', '-').flatMap { it.split(CAMEL_CASE) }.filter { it.isNotEmpty() }
         val wholes = variants(nickname)
         val all = wholes + parts.flatMap(::variants)
         return when {
-            all.any { it in RESERVED } || wholes.any { w -> RESERVED_ROOTS.any { it in w } } -> "Ce pseudo est réservé, choisis-en un autre"
+            all.any { it in RESERVED } || wholes.any { w -> RESERVED_ROOTS.any { it in w } } -> tr("Ce pseudo est réservé, choisis-en un autre", "This nickname is reserved, choose another one")
             all.any { it in WORDS } || wholes.any { w -> ROOTS.any { it in ALLOWED.fold(w) { s, ok -> s.replace(ok, "") } } } ->
-                "Ce pseudo n'est pas autorisé, choisis-en un autre"
+                tr("Ce pseudo n'est pas autorisé, choisis-en un autre", "This nickname is not allowed, choose another one")
             else -> null
         }
     }

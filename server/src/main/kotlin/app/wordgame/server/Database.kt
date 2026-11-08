@@ -155,6 +155,8 @@ class Database(path: String) : AutoCloseable {
             "ALTER TABLE users ADD COLUMN google_sub TEXT",
             // The most points the turn could score (for the stats); -1: not counted; NULL: not computed yet.
             "ALTER TABLE moves ADD COLUMN best_score INTEGER",
+            // Language of the phone's notifications ("fr", "en"), from the Accept-Language of its registration.
+            "ALTER TABLE devices ADD COLUMN lang TEXT NOT NULL DEFAULT 'fr'",
         )
     }
 }

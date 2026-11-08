@@ -7,6 +7,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import app.wordgame.android.ApiFailure
+import app.wordgame.android.R
+import app.wordgame.android.Strings
 import app.wordgame.engine.InvalidReason
 import app.wordgame.engine.Premium
 import app.wordgame.engine.Refusal
@@ -53,18 +55,19 @@ fun WordgameTheme(content: @Composable () -> Unit) {
 
 fun Throwable.userMessage(refusals: Refusals? = null): String = when (this) {
     is ApiFailure -> when (error.code) {
-        "UNKNOWN_WORDS" -> "Refusé : ${refusedWords(error.unknownWords, refusals)}"
-        "ILLEGAL_PLACEMENT" -> "Placement invalide"
-        "NOT_YOUR_TURN" -> "Ce n'est pas ton tour"
-        "STALE_GAME" -> "La partie a changé, elle a été rechargée"
-        "BAG_TOO_SMALL" -> "Moins de 7 lettres dans le sac : échange impossible"
-        "TILES_NOT_IN_RACK" -> "Ces lettres ne sont pas sur ton chevalet"
-        "GAME_FINISHED" -> "La partie est terminée"
-        "GAME_STARTED" -> "Les deux joueurs ont déjà joué : la partie ne peut plus être supprimée"
+        "UNKNOWN_WORDS" -> Strings.get(R.string.err_refused, refusedWords(error.unknownWords, refusals))
+        "ILLEGAL_PLACEMENT" -> Strings.get(R.string.err_illegal_placement)
+        "NOT_YOUR_TURN" -> Strings.get(R.string.err_not_your_turn)
+        "STALE_GAME" -> Strings.get(R.string.err_stale)
+        "BAG_TOO_SMALL" -> Strings.get(R.string.err_bag_too_small)
+        "TILES_NOT_IN_RACK" -> Strings.get(R.string.err_tiles_not_in_rack)
+        "GAME_FINISHED" -> Strings.get(R.string.err_game_finished)
+        "GAME_STARTED" -> Strings.get(R.string.err_game_started)
+        // The server's message, in the language the app asked for.
         else -> error.message
     }
-    is IOException -> "Serveur injoignable, vérifie ta connexion"
-    else -> message ?: "Erreur inattendue"
+    is IOException -> Strings.get(R.string.err_offline)
+    else -> message ?: Strings.get(R.string.err_unexpected)
 }
 
 /** "OCTOBER (nom propre), XQZ (n'existe pas)". */
@@ -72,23 +75,23 @@ fun refusedWords(words: List<String>, refusals: Refusals?): String =
     words.joinToString { word -> "$word (${refusals?.get(word).userMessage()})" }
 
 fun Refusal?.userMessage(): String = when (this) {
-    null -> "n'existe pas"
-    Refusal.PROPER_NOUN -> "nom propre"
-    Refusal.ABBREVIATION -> "abréviation ou sigle"
-    Refusal.COMPOUND -> "s'écrit avec un trait d'union ou une apostrophe"
-    Refusal.MISSPELLING -> "orthographe fautive"
-    Refusal.AFFIX -> "préfixe ou suffixe"
-    Refusal.LOCUTION -> "n'existe que dans une locution"
-    Refusal.NOT_LISTED -> "absent du dictionnaire officiel"
+    null -> Strings.get(R.string.refusal_none)
+    Refusal.PROPER_NOUN -> Strings.get(R.string.refusal_proper_noun)
+    Refusal.ABBREVIATION -> Strings.get(R.string.refusal_abbreviation)
+    Refusal.COMPOUND -> Strings.get(R.string.refusal_compound)
+    Refusal.MISSPELLING -> Strings.get(R.string.refusal_misspelling)
+    Refusal.AFFIX -> Strings.get(R.string.refusal_affix)
+    Refusal.LOCUTION -> Strings.get(R.string.refusal_locution)
+    Refusal.NOT_LISTED -> Strings.get(R.string.refusal_not_listed)
 }
 
 fun InvalidReason.userMessage(): String = when (this) {
     InvalidReason.NO_TILES -> ""
-    InvalidReason.NOT_IN_LINE -> "Les lettres doivent être sur une même ligne"
-    InvalidReason.GAP -> "Les lettres doivent se suivre"
-    InvalidReason.FIRST_MOVE_NOT_ON_CENTER -> "Le premier mot doit passer par le centre"
-    InvalidReason.NOT_CONNECTED -> "Le mot doit toucher un mot déjà posé"
-    InvalidReason.NO_WORD -> "Un mot fait au moins 2 lettres"
-    InvalidReason.UNKNOWN_WORDS -> "Mot inconnu"
-    else -> "Placement invalide"
+    InvalidReason.NOT_IN_LINE -> Strings.get(R.string.invalid_not_in_line)
+    InvalidReason.GAP -> Strings.get(R.string.invalid_gap)
+    InvalidReason.FIRST_MOVE_NOT_ON_CENTER -> Strings.get(R.string.invalid_first_move)
+    InvalidReason.NOT_CONNECTED -> Strings.get(R.string.invalid_not_connected)
+    InvalidReason.NO_WORD -> Strings.get(R.string.invalid_no_word)
+    InvalidReason.UNKNOWN_WORDS -> Strings.get(R.string.invalid_unknown_word)
+    else -> Strings.get(R.string.err_illegal_placement)
 }

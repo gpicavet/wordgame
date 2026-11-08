@@ -66,6 +66,8 @@ data class PlayerView(
     /** Resigned or timed out in a game of 3 or more. */
     val eliminated: Boolean = false,
     val bot: Boolean = false,
+    /** The player deleted their account ([nickname] is then "Joueur supprimé" / "Deleted player"). */
+    val deleted: Boolean = false,
 )
 
 @Serializable

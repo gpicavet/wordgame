@@ -25,10 +25,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.wordgame.android.R
 import app.wordgame.engine.Board
 import app.wordgame.engine.Candidate
 import app.wordgame.engine.Criterion
@@ -43,6 +46,7 @@ import app.wordgame.engine.Tip
 import app.wordgame.engine.TipKind
 import app.wordgame.protocol.GameView
 import app.wordgame.protocol.MoveView
+import java.text.NumberFormat
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -53,10 +57,10 @@ import kotlinx.coroutines.withContext
  * [review]: its grade and advice, in games against one robot only (see [coached]).
  */
 data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val before: Board, val review: MoveReview? = null) {
-    val played: String get() = when (move.type) {
+    val played: String @Composable get() = when (move.type) {
         MoveType.PLAY -> "${move.words.first().word} (${move.score})"
-        MoveType.EXCHANGE -> "Échange de ${move.exchangedCount} lettre(s)"
-        MoveType.PASS -> "Passe"
+        MoveType.EXCHANGE -> pluralStringResource(R.plurals.analysis_exchange, move.exchangedCount, move.exchangedCount)
+        MoveType.PASS -> stringResource(R.string.analysis_pass)
         else -> move.type.name
     }
     val bestScore get() = best.firstOrNull()?.score ?: 0
@@ -66,10 +70,10 @@ data class MoveAnalysis(val move: MoveView, val best: List<Candidate>, val befor
      * Shown under the player's last move: only the best possible score, not the word, which could
      * still be played. The moves themselves are shown in the end-of-game analysis.
      */
-    val verdict: String get() = when {
-        best.isEmpty() -> "aucun mot n'était possible"
-        wasBest -> "c'était le meilleur coup !"
-        else -> "meilleur coup : $bestScore points"
+    val verdict: String @Composable get() = when {
+        best.isEmpty() -> stringResource(R.string.analysis_verdict_none)
+        wasBest -> stringResource(R.string.analysis_verdict_best)
+        else -> stringResource(R.string.analysis_verdict_score, bestScore)
     }
 }
 
@@ -102,7 +106,11 @@ suspend fun analyse(
         }
     }
 
-private fun Candidate.label() = "${words.joinToString { it.word }} : $score pts" + if (tiles.any { it.blank }) " (joker)" else ""
+@Composable
+private fun Candidate.label() = stringResource(
+    if (tiles.any { it.blank }) R.string.analysis_candidate_blank else R.string.analysis_candidate,
+    words.joinToString { it.word }, score,
+)
 
 /** The board before a move, with [tiles] (the move played or a better one) highlighted. */
 @Composable
@@ -142,51 +150,60 @@ fun MoveOnBoardDialog(title: String, before: Board, tiles: List<Placement>, rule
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.analysis_close)) } },
         properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier.padding(8.dp),
     )
 }
 
-fun MoveReview.label() = when (grade) {
-    10 -> "Parfait"
-    8, 9 -> "Très bien"
-    6, 7 -> "Bien"
-    4, 5 -> "Moyen"
-    else -> "À revoir"
-}
+@Composable
+fun MoveReview.label() = stringResource(
+    when (grade) {
+        10 -> R.string.analysis_grade_perfect
+        8, 9 -> R.string.analysis_grade_great
+        6, 7 -> R.string.analysis_grade_good
+        4, 5 -> R.string.analysis_grade_fair
+        else -> R.string.analysis_grade_weak
+    },
+)
 
+@Composable
 fun Tip.text() = when (kind) {
-    TipKind.MORE_POINTS -> "Un autre coup rapportait $amount points de plus."
-    TipKind.Q_WITHOUT_U -> "Tu gardes un Q sans U : il est très difficile à placer."
-    TipKind.BLANK_SPENT -> "Tu as joué un joker pour peu de points : garde-le plutôt pour un scrabble."
-    TipKind.TOO_MANY_VOWELS -> "Tu gardes trop de voyelles : vise autant de voyelles que de consonnes."
-    TipKind.TOO_MANY_CONSONANTS -> "Tu gardes trop de consonnes : vise autant de voyelles que de consonnes."
-    TipKind.DUPLICATES -> "Tu gardes des lettres en double : elles se combinent mal."
-    TipKind.WEAK_LEAVE -> "Les lettres que tu gardes se placent mal : un autre coup laissait un meilleur tirage."
-    TipKind.OPENS_TRIPLE_WORD -> "Ton coup ouvre une case mot compte triple à l'adversaire."
-    TipKind.OPENS_PREMIUMS -> "Ton coup ouvre des cases bonus à l'adversaire."
-    TipKind.ENDGAME_LEAVE -> "Le sac est vide : place d'abord tes lettres chères, elles comptent contre toi à la fin."
+    TipKind.MORE_POINTS -> stringResource(R.string.analysis_tip_more_points, amount)
+    TipKind.Q_WITHOUT_U -> stringResource(R.string.analysis_tip_q_without_u)
+    TipKind.BLANK_SPENT -> stringResource(R.string.analysis_tip_blank_spent)
+    TipKind.TOO_MANY_VOWELS -> stringResource(R.string.analysis_tip_too_many_vowels)
+    TipKind.TOO_MANY_CONSONANTS -> stringResource(R.string.analysis_tip_too_many_consonants)
+    TipKind.DUPLICATES -> stringResource(R.string.analysis_tip_duplicates)
+    TipKind.WEAK_LEAVE -> stringResource(R.string.analysis_tip_weak_leave)
+    TipKind.OPENS_TRIPLE_WORD -> stringResource(R.string.analysis_tip_opens_triple_word)
+    TipKind.OPENS_PREMIUMS -> stringResource(R.string.analysis_tip_opens_premiums)
+    TipKind.ENDGAME_LEAVE -> stringResource(R.string.analysis_tip_endgame_leave)
 }
 
-fun Criterion.label() = when (this) {
-    Criterion.SCORE -> "Points marqués"
-    Criterion.LEAVE -> "Lettres gardées"
-    Criterion.BOARD -> "Cases laissées à l'adversaire"
-    Criterion.BAG -> "Tirage et fin de partie"
-}
+@Composable
+fun Criterion.label() = stringResource(
+    when (this) {
+        Criterion.SCORE -> R.string.analysis_criterion_score
+        Criterion.LEAVE -> R.string.analysis_criterion_leave
+        Criterion.BOARD -> R.string.analysis_criterion_board
+        Criterion.BAG -> R.string.analysis_criterion_bag
+    },
+)
 
-/** The 3 criteria that weigh most in the grade: "Points marqués : −20", in points against the best move. */
+/** The 3 criteria that weigh most in the grade: "Points scored: −20", in points against the best move. */
+@Composable
 fun MoveReview.mainCriteria(): List<String> = criteria.take(3).map { (criterion, points) ->
     val rounded = points.roundToInt()
-    "${criterion.label()} : ${if (rounded > 0) "+" else if (rounded < 0) "−" else ""}${abs(rounded)}"
+    stringResource(R.string.analysis_criterion_line, criterion.label(), "${if (rounded > 0) "+" else if (rounded < 0) "−" else ""}${abs(rounded)}")
 }
 
 /** The advice of a review, or praise when there is nothing to say. */
+@Composable
 fun MoveReview.advice(): List<String> = when {
     tips.isNotEmpty() -> tips.map { it.text() }
-    grade == 10 -> listOf("C'était le meilleur coup !")
-    else -> listOf("Un autre coup était un peu meilleur, en points et en lettres gardées.")
+    grade == 10 -> listOf(stringResource(R.string.analysis_advice_best))
+    else -> listOf(stringResource(R.string.analysis_advice_close))
 }
 
 /** Grade of the player's last move, its advice and the best possible score (not the word, which could still be played). */
@@ -197,15 +214,15 @@ fun MoveReviewDialog(analysis: MoveAnalysis, review: MoveReview, onDismiss: () -
         title = { Text("${review.grade}/10 · ${review.label()}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Ton coup : ${analysis.played}", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.analysis_your_move, analysis.played), fontWeight = FontWeight.Bold)
                 review.advice().forEach { Text(it) }
                 if (review.criteria.isNotEmpty()) {
-                    Text("Écart avec le meilleur coup, en points :", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.analysis_gap_title), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                     review.mainCriteria().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
-                if (analysis.best.isNotEmpty()) Text("Meilleur score possible : ${analysis.bestScore} points", style = MaterialTheme.typography.bodySmall)
+                if (analysis.best.isNotEmpty()) Text(stringResource(R.string.analysis_best_possible, analysis.bestScore), style = MaterialTheme.typography.bodySmall)
                 Text(
-                    "La note compare ton coup au meilleur selon IroBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l'adversaire.",
+                    stringResource(R.string.analysis_grade_explained),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -227,47 +244,54 @@ fun GameAnalysisDialog(game: GameView, lexicon: Lexicon, coachWeights: DoubleArr
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth()) {
-                    Text("Analyse de la partie", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(onClick = onDismiss) { Text("Fermer") }
+                    Text(stringResource(R.string.analysis_title), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.analysis_close)) }
                 }
                 val list = analyses
                 when {
-                    list == null -> Text("Calcul des meilleurs coups…")
-                    list.isEmpty() -> Text("Aucun coup à analyser : les chevalets n'étaient pas encore enregistrés pour cette partie.")
+                    list == null -> Text(stringResource(R.string.analysis_computing))
+                    list.isEmpty() -> Text(stringResource(R.string.analysis_no_moves))
                     else -> {
                         val scored = list.sumOf { if (it.move.type == MoveType.PLAY) it.move.score else 0 }
                         val possible = list.sumOf { it.bestScore }
+                        val bestCount = list.count { it.wasBest }
                         Text(
-                            "Tu as marqué $scored points sur $possible possibles" +
-                                (if (possible > 0) " (${scored * 100 / possible} %)" else "") +
-                                " · ${list.count { it.wasBest }} meilleur(s) coup(s) sur ${list.size}",
+                            (if (possible > 0) {
+                                val share = NumberFormat.getPercentInstance().format(scored.toDouble() / possible)
+                                stringResource(R.string.analysis_summary_share, scored, possible, share)
+                            } else stringResource(R.string.analysis_summary, scored, possible)) +
+                                " · " + pluralStringResource(R.plurals.analysis_best_count, bestCount, bestCount, list.size),
                             fontWeight = FontWeight.Bold,
                         )
                         val grades = list.mapNotNull { it.review?.grade }
-                        if (grades.isNotEmpty()) Text("Note moyenne : ${"%.1f".format(grades.average())}/10", fontWeight = FontWeight.Bold)
-                        Text("Touche un coup pour le voir sur le plateau.", style = MaterialTheme.typography.bodySmall)
+                        if (grades.isNotEmpty()) {
+                            Text(stringResource(R.string.analysis_average_grade, "%.1f".format(grades.average())), fontWeight = FontWeight.Bold)
+                        }
+                        Text(stringResource(R.string.analysis_tap_hint), style = MaterialTheme.typography.bodySmall)
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(list, key = { it.move.moveNumber }) { a ->
                                 Card(Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("Coup ${a.move.moveNumber} · chevalet ${a.move.rack?.replace('?', '★')}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(stringResource(R.string.analysis_move_header, a.move.moveNumber, a.move.rack?.replace('?', '★') ?: ""), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        val played = stringResource(R.string.analysis_played, a.played)
                                         Text(
-                                            "Joué : ${a.played}" + if (a.wasBest) " ✓" else "",
+                                            played + if (a.wasBest) " ✓" else "",
                                             fontWeight = FontWeight.Bold,
                                             modifier = (if (a.wasBest) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp) else Modifier)
-                                                .then(if (a.move.tiles.isNotEmpty()) Modifier.clickable { shown = Triple("Joué : ${a.played}", a.before, a.move.tiles) } else Modifier),
+                                                .then(if (a.move.tiles.isNotEmpty()) Modifier.clickable { shown = Triple(played, a.before, a.move.tiles) } else Modifier),
                                         )
                                         a.best.forEachIndexed { i, c ->
+                                            val label = c.label()
                                             Text(
-                                                "${i + 1}. ${c.label()} ›",
+                                                "${i + 1}. $label ›",
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.fillMaxWidth().clickable { shown = Triple(c.label(), a.before, c.tiles) }.padding(vertical = 2.dp),
+                                                modifier = Modifier.fillMaxWidth().clickable { shown = Triple(label, a.before, c.tiles) }.padding(vertical = 2.dp),
                                             )
                                         }
-                                        if (a.best.isEmpty()) Text("Aucun mot n'était possible.", style = MaterialTheme.typography.bodyMedium)
+                                        if (a.best.isEmpty()) Text(stringResource(R.string.analysis_no_word), style = MaterialTheme.typography.bodyMedium)
                                         a.review?.let { r ->
-                                            Text("Note : ${r.grade}/10 · ${r.label()}", fontWeight = FontWeight.Bold)
+                                            Text(stringResource(R.string.analysis_grade_line, r.grade, r.label()), fontWeight = FontWeight.Bold)
                                             r.advice().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                                             if (r.criteria.isNotEmpty()) Text(r.mainCriteria().joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }

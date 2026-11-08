@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import android.text.format.DateFormat
+import app.wordgame.android.R
 import app.wordgame.android.attempt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -34,6 +36,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +48,7 @@ import app.wordgame.android.ApiClient
 import app.wordgame.protocol.FinishedGame
 import app.wordgame.protocol.GameResult
 import app.wordgame.protocol.PlayerStats
+import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -52,7 +57,12 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 
-private val DATE = DateTimeFormatter.ofPattern("d MMM", Locale.FRENCH).withZone(ZoneId.systemDefault())
+/** "8 nov." in French, "Nov 8" in English: day and short month in the order of the phone's language. */
+private fun date(millis: Long): String {
+    val locale = Locale.getDefault()
+    return DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "dMMM"), locale)
+        .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(millis))
+}
 
 /** Window of the moving average drawn over the per-game scores. */
 private const val AVERAGE_WINDOW = 5
@@ -60,7 +70,8 @@ private const val AVERAGE_WINDOW = 5
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
-    var language by remember { mutableStateOf(GameLanguage.FR) }
+    // The games in the phone's language first (English for the languages the game does not have).
+    var language by remember { mutableStateOf(GameLanguage.entries.firstOrNull { it.code == Locale.getDefault().language } ?: GameLanguage.EN) }
     var stats by remember { mutableStateOf<PlayerStats?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(language) {
@@ -72,7 +83,7 @@ fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Mes statistiques") },
+                title = { Text(stringResource(R.string.stats_title)) },
                 navigationIcon = { BackButton(onBack) },
             )
         },
@@ -87,7 +98,7 @@ fun StatsScreen(api: ApiClient, onBack: () -> Unit) {
             val s = stats
             when {
                 error != null -> Text(error!!, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
-                s == null -> Text("Chargement…", Modifier.padding(16.dp))
+                s == null -> Text(stringResource(R.string.stats_loading), Modifier.padding(16.dp))
                 else -> StatsContent(s, Modifier)
             }
         }
@@ -102,45 +113,49 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
     ) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Victoires", "${stats.wins}", "sur ${stats.finishedGames} parties")
-                StatTile("Score moyen", stats.averageScore?.let { "%.0f".format(it) } ?: "–", "par partie")
+                StatTile(
+                    stringResource(R.string.stats_wins), "${stats.wins}",
+                    pluralStringResource(R.plurals.stats_wins_caption, stats.finishedGames, stats.finishedGames),
+                )
+                StatTile(stringResource(R.string.stats_average_score), stats.averageScore?.let { "%.0f".format(it) } ?: "–", stringResource(R.string.stats_per_game))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Points", stats.pointsPerTurn?.let { "%.1f".format(it) } ?: "–", "par tour")
-                StatTile("Scrabbles", "${stats.bingos}", "7 lettres posées")
+                StatTile(stringResource(R.string.stats_points), stats.pointsPerTurn?.let { "%.1f".format(it) } ?: "–", stringResource(R.string.stats_per_turn))
+                StatTile(stringResource(R.string.stats_bingos), "${stats.bingos}", stringResource(R.string.stats_bingos_caption))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Points trouvés", stats.share?.let { percent(it) } ?: "–", "des points possibles à tes tours")
+                StatTile(stringResource(R.string.stats_share), stats.share?.let { percent(it) } ?: "–", stringResource(R.string.stats_share_caption))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val helped = stats.history.count { it.hints > 0 }
-                StatTile("Indices", "${stats.hintTurns}", if (stats.hintTurns == 1) "tour aidé" else "tours aidés")
+                StatTile(stringResource(R.string.stats_hints), "${stats.hintTurns}", pluralStringResource(R.plurals.stats_hint_turns, stats.hintTurns))
+                val unhelped = stats.finishedGames - helped
                 StatTile(
-                    "Sans indice",
+                    stringResource(R.string.stats_no_hints),
                     "${stats.history.count { it.result == GameResult.WIN && it.hints == 0 }}",
-                    "victoires sur ${stats.finishedGames - helped} parties",
+                    pluralStringResource(R.plurals.stats_no_hints_caption, unhelped, unhelped),
                 )
             }
         }
 
-        item { SectionTitle("Progression") }
+        item { SectionTitle(stringResource(R.string.stats_progress)) }
         item {
             var byShare by remember { mutableStateOf(false) }
             val games = if (byShare) stats.history.filter { it.share != null } else stats.history
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !byShare, onClick = { byShare = false }, label = { Text("Score") })
-                    FilterChip(selected = byShare, onClick = { byShare = true }, label = { Text("% des points possibles") })
+                    FilterChip(selected = !byShare, onClick = { byShare = false }, label = { Text(stringResource(R.string.stats_chart_score)) })
+                    FilterChip(selected = byShare, onClick = { byShare = true }, label = { Text(stringResource(R.string.stats_chart_share)) })
                 }
                 if (games.size < 2) {
                     Text(
-                        "La courbe apparaîtra après 2 parties terminées.",
+                        stringResource(R.string.stats_chart_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -150,36 +165,42 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
             }
         }
 
-        item { SectionTitle("Records") }
+        item { SectionTitle(stringResource(R.string.stats_records)) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RecordLine(
-                        "Meilleur coup",
-                        stats.bestMove?.let { "${it.words.joinToString()} : ${it.score} pts contre ${it.opponent}" },
+                        stringResource(R.string.stats_best_move),
+                        stats.bestMove?.let { stringResource(R.string.stats_best_move_value, it.words.joinToString(), it.score, it.opponent) },
                     )
                     RecordLine(
-                        "Meilleure partie",
-                        stats.bestGame?.let { "${it.myScore} pts contre ${it.opponent} (${DATE.format(Instant.ofEpochMilli(it.finishedAt))})" },
+                        stringResource(R.string.stats_best_game),
+                        stats.bestGame?.let { stringResource(R.string.stats_best_game_value, it.myScore, it.opponent, date(it.finishedAt)) },
                     )
-                    RecordLine("Mot le plus long", stats.longestWord?.let { "$it (${it.length} lettres)" })
                     RecordLine(
-                        "Écart moyen",
-                        stats.averageMargin?.let { "%+.0f pts par partie".format(it) },
+                        stringResource(R.string.stats_longest_word),
+                        stats.longestWord?.let { stringResource(R.string.stats_longest_word_value, it, it.length) },
+                    )
+                    RecordLine(
+                        stringResource(R.string.stats_average_margin),
+                        stats.averageMargin?.let { stringResource(R.string.stats_average_margin_value, "%+.0f".format(it)) },
                     )
                 }
             }
         }
 
         if (stats.opponents.isNotEmpty()) {
-            item { SectionTitle("Par adversaire") }
+            item { SectionTitle(stringResource(R.string.stats_by_opponent)) }
             items(stats.opponents) { o ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(o.nickname, Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    val win = resultLabel(GameResult.WIN)
+                    val loss = resultLabel(GameResult.LOSS)
+                    val draw = resultLabel(GameResult.DRAW)
                     Text(
                         buildString {
-                            append("${o.wins} V · ${o.losses} D")
-                            if (o.draws > 0) append(" · ${o.draws} N")
+                            append("${o.wins} $win · ${o.losses} $loss")
+                            if (o.draws > 0) append(" · ${o.draws} $draw")
                         },
                     )
                 }
@@ -187,11 +208,11 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
         }
 
         if (stats.history.isNotEmpty()) {
-            item { SectionTitle("Parties terminées") }
+            item { SectionTitle(stringResource(R.string.stats_finished_games)) }
             // The table behind the chart: every point, readable without the plot.
             items(stats.history.reversed(), key = { it.gameId }) { g ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(DATE.format(Instant.ofEpochMilli(g.finishedAt)), Modifier.weight(0.25f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(date(g.finishedAt), Modifier.weight(0.25f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(if (g.hints > 0) "${g.opponent} 💡${g.hints}" else g.opponent, Modifier.weight(0.35f))
                     Text("${g.myScore} – ${g.opponentScore}", Modifier.weight(0.25f))
                     Text(resultLabel(g.result), Modifier.weight(0.15f), fontWeight = FontWeight.Bold)
@@ -202,11 +223,15 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
     }
 }
 
-private fun resultLabel(r: GameResult) = when (r) {
-    GameResult.WIN -> "V"
-    GameResult.LOSS -> "D"
-    GameResult.DRAW -> "N"
-}
+/** One letter: W, L, D (V, D, N in French). */
+@Composable
+private fun resultLabel(r: GameResult) = stringResource(
+    when (r) {
+        GameResult.WIN -> R.string.stats_win_short
+        GameResult.LOSS -> R.string.stats_loss_short
+        GameResult.DRAW -> R.string.stats_draw_short
+    },
+)
 
 @Composable
 private fun RowScope.StatTile(label: String, value: String, caption: String) {
@@ -232,7 +257,8 @@ private fun RecordLine(label: String, value: String?) {
     }
 }
 
-private fun percent(share: Double) = "%.0f %%".format(share * 100)
+/** "45 %" in French, "45%" in English. */
+private fun percent(share: Double): String = NumberFormat.getPercentInstance().format(share)
 
 /**
  * Score of each finished game, or with [byShare] its share of the possible points (in %), as dots (filled = win,
@@ -297,16 +323,23 @@ private fun ScoreChart(history: List<FinishedGame>, byShare: Boolean) {
 
         // Legend (two series: never color alone).
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("● victoire   ○ défaite", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("— moyenne sur $AVERAGE_WINDOW parties", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.stats_legend_dots), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.stats_legend_average, AVERAGE_WINDOW), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         history.getOrNull(selected)?.let { g ->
-            val average = if (byShare) "%.0f %%".format(averages[selected]) else "%.0f".format(averages[selected])
+            val average = if (byShare) percent(averages[selected] / 100) else "%.0f".format(averages[selected])
+            val result = stringResource(
+                when (g.result) {
+                    GameResult.WIN -> R.string.stats_win
+                    GameResult.LOSS -> R.string.stats_loss
+                    GameResult.DRAW -> R.string.stats_draw
+                },
+            )
             Text(
-                "${DATE.format(Instant.ofEpochMilli(g.finishedAt))} contre ${g.opponent} : ${g.myScore} – ${g.opponentScore} " +
-                    "(${when (g.result) { GameResult.WIN -> "victoire"; GameResult.LOSS -> "défaite"; GameResult.DRAW -> "égalité" }})" +
-                    (if (byShare) ", ${percent(g.share!!)} des points possibles" else "") + ", moyenne $average",
+                stringResource(R.string.stats_selected, date(g.finishedAt), g.opponent, g.myScore, g.opponentScore, result) +
+                    (if (byShare) stringResource(R.string.stats_selected_share, percent(g.share!!)) else "") +
+                    stringResource(R.string.stats_selected_average, average),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

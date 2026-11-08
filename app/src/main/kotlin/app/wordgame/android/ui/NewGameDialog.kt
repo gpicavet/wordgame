@@ -1,5 +1,8 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
+import app.wordgame.android.Strings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -31,10 +34,12 @@ import androidx.compose.ui.unit.dp
 import app.wordgame.android.SoloBot
 
 /** Who sits in a seat. [RANDOM] only for player 2, and then the game is a duel. */
-enum class SeatKind(val label: String) {
-    FRIEND("$FRIEND_ICON Ami"),
-    RANDOM("Hasard"),
-    ROBOT("$ROBOT_ICON Robot"),
+enum class SeatKind(private val icon: String, private val labelName: Int) {
+    FRIEND(FRIEND_ICON, R.string.seat_friend),
+    RANDOM("", R.string.seat_random),
+    ROBOT(ROBOT_ICON, R.string.seat_robot);
+
+    val label: String get() = listOf(icon, Strings.get(labelName)).filter { it.isNotEmpty() }.joinToString(" ")
 }
 
 const val ROBOT_ICON = "🤖"
@@ -47,6 +52,9 @@ enum class GameLanguage(val code: String, val flag: String, val label: String) {
 
     companion object {
         fun of(code: String) = entries.firstOrNull { it.code == code } ?: FR
+
+        /** The language of the app (the phone's), for new games: French on a French phone, English otherwise. */
+        fun ofApp() = if (java.util.Locale.getDefault().language == "fr") FR else EN
     }
 }
 
@@ -71,17 +79,17 @@ class GameSetup(val seats: List<SeatChoice>, val language: GameLanguage) {
 @Composable
 fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
     val seats = remember { mutableStateListOf(SeatChoice()) }
-    var language by remember { mutableStateOf(GameLanguage.FR) }
+    var language by remember { mutableStateOf(GameLanguage.ofApp()) }
     val setup = GameSetup(seats, language)
     val problem = when {
-        setup.friends.any { it.length < 3 } -> "Indique le pseudo de chaque ami"
-        setup.friends.map { it.lowercase() }.toSet().size < setup.friends.size -> "Chaque ami ne peut être choisi qu'une fois"
+        setup.friends.any { it.length < 3 } -> stringResource(R.string.problem_friend_nickname)
+        setup.friends.map { it.lowercase() }.toSet().size < setup.friends.size -> stringResource(R.string.problem_duplicate_friend)
         else -> null
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nouvelle partie") },
+        title = { Text(stringResource(R.string.new_game)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 LanguagePicker(language) { language = it }
@@ -99,17 +107,17 @@ fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
                     )
                 }
                 if (setup.random) {
-                    Text("Partie à deux contre un joueur qui cherche aussi un adversaire.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.random_hint), style = MaterialTheme.typography.bodySmall)
                 } else if (seats.size < 3) {
-                    TextButton(onClick = { seats += SeatChoice() }) { Text("+ Ajouter un joueur") }
+                    TextButton(onClick = { seats += SeatChoice() }) { Text(stringResource(R.string.add_player)) }
                 }
                 problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }
             }
         },
         confirmButton = {
-            TextButton(enabled = problem == null, onClick = { onDismiss(); onStart(setup) }) { Text("Démarrer") }
+            TextButton(enabled = problem == null, onClick = { onDismiss(); onStart(setup) }) { Text(stringResource(R.string.start_game)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -117,7 +125,7 @@ fun NewGameDialog(onDismiss: () -> Unit, onStart: (GameSetup) -> Unit) {
 @Composable
 private fun LanguagePicker(language: GameLanguage, onSelect: (GameLanguage) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Langue", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.language), style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GameLanguage.entries.forEach { l ->
                 FilterChip(selected = language == l, onClick = { onSelect(l) }, label = { Text("${l.flag} ${l.label}", maxLines = 1) })
@@ -131,8 +139,8 @@ private fun LanguagePicker(language: GameLanguage, onSelect: (GameLanguage) -> U
 private fun SeatEditor(number: Int, seat: SeatChoice, kinds: List<SeatKind>, onRemove: (() -> Unit)?, onSelect: (SeatKind) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Joueur $number", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            onRemove?.let { TextButton(onClick = it) { Text("Retirer") } }
+            Text(stringResource(R.string.player_n, number), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            onRemove?.let { TextButton(onClick = it) { Text(stringResource(R.string.remove)) } }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             kinds.forEach { kind ->
@@ -142,8 +150,8 @@ private fun SeatEditor(number: Int, seat: SeatChoice, kinds: List<SeatKind>, onR
         when (seat.kind) {
             SeatKind.FRIEND -> OutlinedTextField(
                 seat.nickname, { seat.nickname = it.trim() }, Modifier.fillMaxWidth(),
-                label = { Text("Pseudo de ton ami") }, singleLine = true,
-                supportingText = { Text("Avec son numéro si besoin : greg#4821") },
+                label = { Text(stringResource(R.string.friend_nickname)) }, singleLine = true,
+                supportingText = { Text(stringResource(R.string.friend_nickname_hint)) },
             )
             SeatKind.ROBOT -> {
                 var open by remember { mutableStateOf(false) }
@@ -152,7 +160,7 @@ private fun SeatEditor(number: Int, seat: SeatChoice, kinds: List<SeatKind>, onR
                         value = botLabel(seat.bot),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Robot") },
+                        label = { Text(stringResource(R.string.seat_robot)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
                     )

@@ -49,10 +49,13 @@ class ServerBackend(private val api: ApiClient, private val gameId: String) : Ga
  * Solo opponents. Each has its own game in progress per language, saved in its own file.
  * [serverLevel]: the same robot in online games ([app.wordgame.protocol.CreateGameRequest.bots]).
  */
-enum class SoloBot(val gameId: String, val displayName: String, val level: String, val file: String, val serverLevel: String) {
-    NONO("solo", "NonoBot", "débutant", "solo.json", "nono"),
-    IRO("solo-iro", "IroBot", "confirmé", "solo-iro.json", "iro"),
-    BELZE("solo-belze", "BelzéBot", "expert", "solo-belze.json", "belze"),
+enum class SoloBot(val gameId: String, val displayName: String, private val levelName: Int, val file: String, val serverLevel: String) {
+    NONO("solo", "NonoBot", R.string.level_beginner, "solo.json", "nono"),
+    IRO("solo-iro", "IroBot", R.string.level_intermediate, "solo-iro.json", "iro"),
+    BELZE("solo-belze", "BelzéBot", R.string.level_expert, "solo-belze.json", "belze");
+
+    /** "beginner", "débutant"…, in the app's language. */
+    val level: String get() = Strings.get(levelName)
 }
 
 @Serializable
@@ -118,7 +121,7 @@ class SoloStore(
 
         override suspend fun move(game: GameView, action: Action): GameView = lock.withLock {
             val current = withContext(Dispatchers.IO) { read() } ?: error("Aucune partie solo")
-            if (game.moveNumber != current.state.moveNumber) throw ApiFailure(ApiError("STALE_GAME", "La partie a changé"))
+            if (game.moveNumber != current.state.moveNumber) throw ApiFailure(ApiError("STALE_GAME", Strings.get(R.string.err_stale)))
             val lexicon = dictionary.get(language)
             when (val outcome = Game.apply(current.state, 0, action, lexicon.words, random)) {
                 is MoveOutcome.Rejected -> throw ApiFailure(ApiError(outcome.error.name, outcome.error.name, outcome.unknownWords))
@@ -150,7 +153,7 @@ class SoloStore(
 
     private fun view(game: SoloGame): GameView {
         val s = game.state
-        val names = listOf(session.nickname ?: "Toi", bot.displayName)
+        val names = listOf(session.nickname ?: Strings.get(R.string.you), bot.displayName)
         return GameView(
             id = gameId,
             rulesId = s.rulesId,

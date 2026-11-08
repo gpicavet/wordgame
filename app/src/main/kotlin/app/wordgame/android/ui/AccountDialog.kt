@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,11 +50,11 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
     if (confirming) {
         AlertDialog(
             onDismissRequest = { if (!busy) confirming = false },
-            title = { Text("Supprimer ton compte ?") },
+            title = { Text(stringResource(R.string.delete_account_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Tu abandonnes tes parties en cours contre d'autres joueurs ; elles restent visibles pour eux sous le nom « Joueur supprimé ».")
-                    Text("Tes parties contre les robots, tes statistiques et tes parties solo sont effacées. C'est définitif.")
+                    Text(stringResource(R.string.delete_account_resign))
+                    Text(stringResource(R.string.delete_account_erased))
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -64,24 +66,24 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
                             .onSuccess { onDeleted() }
                             .onFailure { error = it.userMessage(); busy = false }
                     }
-                }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(enabled = !busy, onClick = { confirming = false }) { Text("Annuler") } },
+            dismissButton = { TextButton(enabled = !busy, onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
         )
         return
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Mon compte") },
+        title = { Text(stringResource(R.string.my_account)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (tag > 0) "$nickname#$tag" else nickname, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Donne ce nom à tes amis pour qu'ils t'invitent : d'autres joueurs peuvent avoir le même pseudo.")
+                Text(stringResource(R.string.account_name_hint))
                 when {
-                    google == true -> Text("✓ Sauvegardé avec Google : tu retrouveras ton compte sur un autre téléphone.")
+                    google == true -> Text(stringResource(R.string.google_saved))
                     google == false && googleSignInAvailable -> {
-                        Text("Sans sauvegarde, ton compte est perdu si tu désinstalles l'application ou changes de téléphone.")
+                        Text(stringResource(R.string.google_unsaved))
                         TextButton(enabled = !busy, onClick = {
                             busy = true
                             error = null
@@ -91,11 +93,11 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
                                     .onFailure { error = it.userMessage() }
                                 busy = false
                             }
-                        }) { Text("Sauvegarder avec Google") }
+                        }) { Text(stringResource(R.string.save_with_google)) }
                     }
                 }
                 if (blocked.isNotEmpty()) {
-                    Text("Joueurs bloqués", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.blocked_players), fontWeight = FontWeight.Bold)
                     blocked.forEach { player ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(player.name, Modifier.weight(1f))
@@ -105,16 +107,17 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
                                         .onSuccess { blocked = blocked - player }
                                         .onFailure { error = it.userMessage() }
                                 }
-                            }) { Text("Débloquer") }
+                            }) { Text(stringResource(R.string.unblock)) }
                         }
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 val uriHandler = LocalUriHandler.current
-                TextButton(onClick = { uriHandler.openUri("${BuildConfig.API_URL}/confidentialite") }) { Text("Politique de confidentialité") }
-                TextButton(onClick = { confirming = true }) { Text("Supprimer mon compte", color = MaterialTheme.colorScheme.error) }
+                val privacyPath = stringResource(R.string.privacy_path)
+                TextButton(onClick = { uriHandler.openUri("${BuildConfig.API_URL}$privacyPath") }) { Text(stringResource(R.string.privacy_policy)) }
+                TextButton(onClick = { confirming = true }) { Text(stringResource(R.string.delete_my_account), color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
     )
 }

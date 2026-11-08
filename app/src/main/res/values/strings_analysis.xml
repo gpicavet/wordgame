@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Move analysis, hints and the bag (Analysis.kt, HintsDialog.kt, Bag.kt, TileGlyph.kt). French: values-fr/. -->
+<resources>
+    <plurals name="analysis_exchange">
+        <item quantity="one">Exchanged %d tile</item>
+        <item quantity="other">Exchanged %d tiles</item>
+    </plurals>
+    <string name="analysis_pass">Pass</string>
+    <string name="analysis_verdict_none">no word was possible</string>
+    <string name="analysis_verdict_best">that was the best move!</string>
+    <string name="analysis_verdict_score">best move: %1$d points</string>
+    <string name="analysis_candidate">%1$s: %2$d pts</string>
+    <string name="analysis_candidate_blank">%1$s: %2$d pts (blank)</string>
+    <string name="analysis_close">Close</string>
+
+    <string name="analysis_grade_perfect">Perfect</string>
+    <string name="analysis_grade_great">Great</string>
+    <string name="analysis_grade_good">Good</string>
+    <string name="analysis_grade_fair">Fair</string>
+    <string name="analysis_grade_weak">Needs work</string>
+
+    <string name="analysis_tip_more_points">Another move scored %1$d more points.</string>
+    <string name="analysis_tip_q_without_u">You\'re keeping a Q without a U: it\'s very hard to play.</string>
+    <string name="analysis_tip_blank_spent">You used a blank for few points: better keep it for a bingo.</string>
+    <string name="analysis_tip_too_many_vowels">You\'re keeping too many vowels: aim for as many vowels as consonants.</string>
+    <string name="analysis_tip_too_many_consonants">You\'re keeping too many consonants: aim for as many vowels as consonants.</string>
+    <string name="analysis_tip_duplicates">You\'re keeping duplicate letters: they combine poorly.</string>
+    <string name="analysis_tip_weak_leave">The tiles you kept are hard to play: another move left a better rack.</string>
+    <string name="analysis_tip_opens_triple_word">Your move opens a triple word square for your opponent.</string>
+    <string name="analysis_tip_opens_premiums">Your move opens premium squares for your opponent.</string>
+    <string name="analysis_tip_endgame_leave">The bag is empty: play your high-value tiles first, they count against you at the end.</string>
+
+    <string name="analysis_criterion_score">Points scored</string>
+    <string name="analysis_criterion_leave">Tiles kept</string>
+    <string name="analysis_criterion_board">Squares left to your opponent</string>
+    <string name="analysis_criterion_bag">Draw and endgame</string>
+    <string name="analysis_criterion_line">%1$s: %2$s</string>
+
+    <string name="analysis_advice_best">That was the best move!</string>
+    <string name="analysis_advice_close">Another move was slightly better, in points and tiles kept.</string>
+
+    <string name="analysis_your_move">Your move: %1$s</string>
+    <string name="analysis_gap_title">Gap with the best move, in points:</string>
+    <string name="analysis_best_possible">Best possible score: %1$d points</string>
+    <string name="analysis_grade_explained">The grade compares your move with IroBot\'s best: the points scored, but also the tiles kept and the squares left to your opponent.</string>
+
+    <string name="analysis_title">Game analysis</string>
+    <string name="analysis_computing">Finding the best moves…</string>
+    <string name="analysis_no_moves">No moves to analyze: racks were not recorded yet for this game.</string>
+    <string name="analysis_summary">You scored %1$d of %2$d possible points</string>
+    <string name="analysis_summary_share">You scored %1$d of %2$d possible points (%3$s)</string>
+    <plurals name="analysis_best_count">
+        <item quantity="one">%1$d best move out of %2$d</item>
+        <item quantity="other">%1$d best moves out of %2$d</item>
+    </plurals>
+    <string name="analysis_average_grade">Average grade: %1$s/10</string>
+    <string name="analysis_tap_hint">Tap a move to see it on the board.</string>
+    <string name="analysis_move_header">Move %1$d · rack %2$s</string>
+    <string name="analysis_played">Played: %1$s</string>
+    <string name="analysis_no_word">No word was possible.</string>
+    <string name="analysis_grade_line">Grade: %1$d/10 · %2$s</string>
+
+    <string name="hints_title">Hints</string>
+    <string name="hints_searching">Searching…</string>
+    <string name="hints_unavailable">Hints unavailable.</string>
+    <string name="hints_no_bingo">No bingo possible with these tiles.</string>
+    <plurals name="hints_bingo_count">
+        <item quantity="one">%d possible bingo:</item>
+        <item quantity="other">%d possible bingos:</item>
+    </plurals>
+    <string name="hints_show">Show</string>
+    <plurals name="hints_more">
+        <item quantity="one">…and %d harder one.</item>
+        <item quantity="other">…and %d harder ones.</item>
+    </plurals>
+    <string name="hints_best_score">Best possible score: %1$d points</string>
+    <string name="hints_easy">Easy</string>
+    <string name="hints_medium">Medium</string>
+    <string name="hints_hard">Hard</string>
+    <string name="hints_common">Common word</string>
+    <string name="hints_rare">Rare word</string>
+    <string name="hints_rack_only">your 7 tiles alone</string>
+    <plurals name="hints_board_letters">
+        <item quantity="one">using %d letter on the board</item>
+        <item quantity="other">using %d letters on the board</item>
+    </plurals>
+    <plurals name="hints_cross_words">
+        <item quantity="one">forms %d other word</item>
+        <item quantity="other">forms %d other words</item>
+    </plurals>
+    <string name="hints_points">%1$d points</string>
+
+    <plurals name="bag_content_description">
+        <item quantity="one">%d tile in the bag</item>
+        <item quantity="other">%d tiles in the bag</item>
+    </plurals>
+    <string name="bag_unseen_title">Tiles left: %1$d</string>
+    <string name="bag_unseen_detail">%1$d in the bag and %2$d on opposing racks.</string>
+    <plurals name="bag_tile_description">
+        <item quantity="one">%1$s, %2$d point</item>
+        <item quantity="other">%1$s, %2$d points</item>
+    </plurals>
+</resources>

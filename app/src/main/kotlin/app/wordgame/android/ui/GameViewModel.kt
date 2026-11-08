@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import app.wordgame.android.R
+import app.wordgame.android.Strings
 import app.wordgame.android.attempt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -275,9 +277,9 @@ class GameViewModel(
         if (game == null || tentative.isEmpty()) return null
         val rules = RuleSet.byId(game.rulesId)
         return when (val e = MoveEvaluator.evaluate(Board.fromRows(game.board), tentative.map { it.placement }, rules, words)) {
-            is Evaluation.Valid -> Preview("${e.words.joinToString { it.word }} : ${e.score} pts", valid = true)
+            is Evaluation.Valid -> Preview(Strings.get(R.string.preview_score, e.words.joinToString { it.word }, e.score), valid = true)
             is Evaluation.Invalid -> Preview(
-                if (e.unknownWords.isNotEmpty()) "Refusé : ${refusedWords(e.unknownWords, refusals)}" else e.reason.userMessage(),
+                if (e.unknownWords.isNotEmpty()) Strings.get(R.string.err_refused, refusedWords(e.unknownWords, refusals)) else e.reason.userMessage(),
                 valid = false,
             )
         }

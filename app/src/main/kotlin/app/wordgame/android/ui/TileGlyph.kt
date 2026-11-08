@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import app.wordgame.android.R
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
@@ -35,10 +37,9 @@ fun TileGlyph(
     if (letter.length > 1) letterPaint.typeface = Typeface.DEFAULT
     val pointsPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
     val bounds = remember { Rect() }
+    val description = if (points != null && letter.isNotEmpty()) pluralStringResource(R.plurals.bag_tile_description, points, letter, points) else letter
     Canvas(
-        modifier.fillMaxSize().semantics {
-            contentDescription = if (points != null && letter.isNotEmpty()) "$letter, $points points" else letter
-        },
+        modifier.fillMaxSize().semantics { contentDescription = description },
     ) {
         val side = size.minDimension
         drawIntoCanvas { canvas ->

@@ -82,9 +82,11 @@ Chaque partie garde le jeu de règles avec lequel elle a été créée. **Avant 
 
 Plusieurs joueurs peuvent avoir le même pseudo : un numéro à 4 chiffres les distingue (`greg#4821`, affiché dans le menu *Mon compte* de l'app). Pour inviter un ami, le pseudo seul suffit tant qu'il est unique ; sinon il faut son numéro. Dans une partie, deux joueurs homonymes apparaissent avec leur numéro.
 
-Politique de confidentialité (exigée par Google Play) : page publique `/confidentialite` (`server/.../LegalPages.kt`), liée depuis *Mon compte*. Elle décrit ce que font le serveur et l'app : à tenir à jour avec le code et le formulaire « Sécurité des données » de la console Play.
+Langue : le serveur répond en français ou en anglais selon l'en-tête `Accept-Language` (messages d'erreur, nom « Joueur supprimé » / « Deleted player ») ; sans en-tête, en français. Chaque téléphone enregistre sa langue avec son jeton de notification (`devices.lang`), et les notifications sont écrites dans la langue du dernier téléphone du joueur. Les textes sont à côté du code, en paires `tr("…", "…")` (`Messages.kt`).
 
-Suppression du compte (exigée par Google Play) : depuis l'app (*Mon compte*), ou sur la page publique `/supprimer-compte` en se connectant avec Google, pour les comptes associés à Google. Les parties contre des robots seulement sont effacées ; dans les autres, le joueur abandonne et apparaît comme « Joueur supprimé ». Ses téléphones, sa file d'attente et ses indices sont oubliés.
+Politique de confidentialité (exigée par Google Play) : page publique `/confidentialite`, en anglais `/privacy` (`server/.../LegalPages.kt`), liée depuis *Mon compte*. Elle décrit ce que font le serveur et l'app : à tenir à jour avec le code et le formulaire « Sécurité des données » de la console Play.
+
+Suppression du compte (exigée par Google Play) : depuis l'app (*Mon compte*), ou sur la page publique `/supprimer-compte` (en anglais `/delete-account`) en se connectant avec Google, pour les comptes associés à Google. Les parties contre des robots seulement sont effacées ; dans les autres, le joueur abandonne et apparaît comme « Joueur supprimé ». Ses téléphones, sa file d'attente et ses indices sont oubliés.
 
 Le serveur valide tout : tour du joueur, lettres présentes sur son chevalet, géométrie, mots, score recalculé côté serveur. Le sac est mélangé avec `SecureRandom` et n'est jamais envoyé. `expectedMoveNumber` évite qu'un coup soit joué deux fois. Un joueur qui ne joue pas pendant 72 h perd la partie (vérification toutes les 5 minutes).
 

@@ -192,7 +192,13 @@ fun Application.wordgame(
         if (version != null && version < minAppVersion && call.request.path().startsWith("/api/")) {
             call.respond(
                 HttpStatusCode.UpgradeRequired,
-                ApiError("UPGRADE_REQUIRED", "Une nouvelle version de l'application est disponible : mets-la à jour pour continuer"),
+                ApiError(
+                    "UPGRADE_REQUIRED",
+                    call.lang().t(
+                        "Une nouvelle version de l'application est disponible : mets-la à jour pour continuer",
+                        "A new version of the app is available: update it to keep playing",
+                    ),
+                ),
             )
             finish()
         }
@@ -203,17 +209,17 @@ fun Application.wordgame(
     }
     install(StatusPages) {
         exception<ApiException> { call, e ->
-            call.respond(e.status, ApiError(e.code, e.message ?: e.code, e.unknownWords))
+            call.respond(e.status, ApiError(e.code, e.text.of(call.lang()), e.unknownWords))
         }
         exception<BadRequestException> { call, e ->
             call.respond(HttpStatusCode.BadRequest, ApiError("BAD_REQUEST", e.message ?: "Bad request"))
         }
         status(HttpStatusCode.TooManyRequests) { call, status ->
-            call.respond(status, ApiError("TOO_MANY_REQUESTS", "Trop de requêtes : réessaie dans un moment"))
+            call.respond(status, ApiError("TOO_MANY_REQUESTS", call.lang().t("Trop de requêtes : réessaie dans un moment", "Too many requests: try again in a moment")))
         }
         exception<Throwable> { call, e ->
             log.error("Unhandled error", e)
-            call.respond(HttpStatusCode.InternalServerError, ApiError("INTERNAL", "Erreur serveur"))
+            call.respond(HttpStatusCode.InternalServerError, ApiError("INTERNAL", call.lang().t("Erreur serveur", "Server error")))
         }
     }
     install(Authentication) {
@@ -226,6 +232,8 @@ fun Application.wordgame(
         get("/supprimer-compte") { call.respondText(accountDeletionPage(googleClientId), ContentType.Text.Html) }
         // Required by Google Play too: the privacy policy, linked from the store listing and the app.
         get("/confidentialite") { call.respondText(privacyPage(contactEmail), ContentType.Text.Html) }
+        get("/privacy") { call.respondText(privacyPageEn(contactEmail), ContentType.Text.Html) }
+        get("/delete-account") { call.respondText(accountDeletionPageEn(googleClientId), ContentType.Text.Html) }
 
         route("/api/v1") {
             rateLimit(SIGN_UP) {
@@ -302,10 +310,14 @@ fun Application.wordgame(
     }
 }
 
-private fun ApplicationCall.user(): User = principal<User>()!!
+/** The signed-in player, with the language of this request. */
+private fun ApplicationCall.user(): User = principal<User>()!!.copy(lang = lang())
+
+/** The language asked for by the request (Accept-Language), French without it. */
+fun ApplicationCall.lang(): Lang = Lang.fromAcceptLanguage(request.headers[HttpHeaders.AcceptLanguage])
 
 private fun ApplicationCall.seat(): Int =
-    parameters["seat"]?.toIntOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "INVALID_PLAYER", "Joueur invalide")
+    parameters["seat"]?.toIntOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "INVALID_PLAYER", tr("Joueur invalide", "Invalid player"))
 
 /**
  * The client's IP address. Behind Caddy (a connection from this machine), the last address of X-Forwarded-For:

@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.Strings
 import app.wordgame.android.attempt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -97,7 +99,7 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
         attempt { api.matchmake(language) }
             .onSuccess { r ->
                 if (r.gameId != null) onCreated(r.gameId!!)
-                else state.update { it.copy(waitingForOpponent = true, message = "En attente d'un adversaire…") }
+                else state.update { it.copy(waitingForOpponent = true, message = Strings.get(R.string.waiting_opponent)) }
             }
             .onFailure { e -> state.update { it.copy(message = e.userMessage()) } }
     }
@@ -130,24 +132,27 @@ fun GamesScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Parties de $nickname") }, actions = {
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.games_of, nickname)) }, actions = {
         IconButton(onClick = onOpenStats) {
-            Icon(painterResource(R.drawable.ic_stats), contentDescription = "Mes statistiques", tint = MaterialTheme.colorScheme.primary)
+            Icon(painterResource(R.drawable.ic_stats), contentDescription = stringResource(R.string.my_stats), tint = MaterialTheme.colorScheme.primary)
         }
         IconButton(onClick = onOpenAccount) {
-            Icon(painterResource(R.drawable.ic_account), contentDescription = "Mon compte", tint = MaterialTheme.colorScheme.primary)
+            Icon(painterResource(R.drawable.ic_account), contentDescription = stringResource(R.string.my_account), tint = MaterialTheme.colorScheme.primary)
         }
     }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp)) {
-            Button(onClick = { showNewGame = true }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) { Text("Jouer") }
+            Button(onClick = { showNewGame = true }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) { Text(stringResource(R.string.play)) }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
 
             val (active, finished) = state.games.partition { it.status == GameStatus.ACTIVE }
             val (myTurn, theirTurn) = active.partition { it.myTurn }
+            val myTurnTitle = stringResource(R.string.section_my_turn)
+            val theirTurnTitle = stringResource(R.string.section_their_turn)
+            val finishedTitle = stringResource(R.string.section_finished)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                section("À toi de jouer", myTurn, onOpenGame)
-                section("En attente de l'adversaire", theirTurn, onOpenGame)
-                section("Terminées", finished, onOpenGame)
+                section(myTurnTitle, myTurn, onOpenGame)
+                section(theirTurnTitle, theirTurn, onOpenGame)
+                section(finishedTitle, finished, onOpenGame)
             }
         }
     }
@@ -176,9 +181,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
                 Column(Modifier.weight(1f)) {
                     Text("${if (game.allBots) ROBOT_ICON else FRIEND_ICON} ${game.opponent}", fontWeight = FontWeight.Bold)
                     val result = when (game.won) {
-                        true -> "Gagné"
-                        false -> "Perdu"
-                        null -> if (game.status == GameStatus.FINISHED) "Égalité" else null
+                        true -> stringResource(R.string.result_won)
+                        false -> stringResource(R.string.result_lost)
+                        null -> if (game.status == GameStatus.FINISHED) stringResource(R.string.result_draw) else null
                     }
                     result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }

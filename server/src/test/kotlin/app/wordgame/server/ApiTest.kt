@@ -33,6 +33,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -532,6 +533,81 @@ class ApiTest {
         assertEquals("TOO_MANY_REQUESTS", third.body<ApiError>().code)
         val statuses = (1..4).map { client.get("/api/v1/games") { bearerAuth(alice.token) }.status }
         assertEquals(listOf(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests), statuses)
+    }
+
+    @Test
+    fun answersInTheLanguageOfTheRequest() = withApp { client, _ ->
+        val alice = client.register("alice")
+        suspend fun error(language: String?) = client.post("/api/v1/games") {
+            bearerAuth(alice.token)
+            language?.let { header(HttpHeaders.AcceptLanguage, it) }
+            contentType(ContentType.Application.Json)
+            setBody(CreateGameRequest())
+        }.body<ApiError>()
+        assertEquals("Choose at least one opponent", error("en-US").message)
+        assertEquals("Choose at least one opponent", error("es-ES,de;q=0.8").message)
+        assertEquals("Choisis au moins un adversaire", error("fr-FR,en;q=0.8").message)
+        assertEquals("Choisis au moins un adversaire", error("de-DE,fr;q=0.9,en;q=0.5").message)
+        assertEquals("Choisis au moins un adversaire", error(null).message)
+        assertEquals("NO_OPPONENT", error("en").code)
+    }
+
+    @Test
+    fun deletedPlayersAreNamedInTheReadersLanguage() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val game: GameView = client.create(alice.token, CreateGameRequest(friends = listOf("bob"))).body()
+        client.delete("/api/v1/me") { bearerAuth(bob.token) }
+        val en: GameView = client.get("/api/v1/games/${game.id}") { bearerAuth(alice.token); header(HttpHeaders.AcceptLanguage, "en") }.body()
+        val bobSeat = 1 - en.mySeat
+        assertEquals("Deleted player", en.players[bobSeat].nickname)
+        assertTrue(en.players[bobSeat].deleted)
+        assertEquals(false, en.players[en.mySeat].deleted)
+        assertEquals("Joueur supprimé", client.view(alice.token, game.id).players[bobSeat].nickname)
+        val list: List<GameSummary> = client.get("/api/v1/games") { bearerAuth(alice.token); header(HttpHeaders.AcceptLanguage, "en") }.body()
+        assertEquals("Deleted player", list.single().opponent)
+    }
+
+    @Test
+    fun notificationsInThePhonesLanguage() {
+        val sent = mutableListOf<Notification>()
+        val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
+        testApplication {
+            val service = GameService(Database(dbFile.path), dictionaries, notifier = { sent += it })
+            application { wordgame(service) }
+            val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
+            val alice = client.register("alice")
+            val bob = client.register("bob")
+            client.post("/api/v1/devices") {
+                bearerAuth(bob.token)
+                header(HttpHeaders.AcceptLanguage, "en-GB")
+                contentType(ContentType.Application.Json)
+                setBody(DeviceRequest("fcm-token-of-bob"))
+            }
+            // Alice's phone is in French: her language does not change Bob's notifications.
+            val game: GameView = client.post("/api/v1/games") {
+                bearerAuth(alice.token)
+                header(HttpHeaders.AcceptLanguage, "fr-FR")
+                contentType(ContentType.Application.Json)
+                setBody(CreateGameRequest(friends = listOf("bob")))
+            }.body()
+            val challenge = sent.single()
+            assertEquals("New challenge", challenge.title)
+            assertTrue(challenge.body.startsWith("alice challenges you"), challenge.body)
+            sent.clear()
+            if (game.currentSeat == game.mySeat) {
+                // Alice resigns: Bob is told he won, in English.
+                client.play(alice.token, game, Action.Resign)
+                assertEquals("Game over", sent.single().title)
+                assertTrue(sent.single().body.startsWith("Win against alice"), sent.single().body)
+                assertTrue(sent.single().body.endsWith("alice resigned."), sent.single().body)
+            } else {
+                // Bob passes: Alice is told it is her turn, in French.
+                client.play(bob.token, client.view(bob.token, game.id), Action.Pass)
+                assertEquals("À toi de jouer", sent.single().title)
+                assertEquals("bob a passé son tour", sent.single().body)
+            }
+        }
     }
 
     /** A robot that always passes: enough to check that the server plays its turns. */

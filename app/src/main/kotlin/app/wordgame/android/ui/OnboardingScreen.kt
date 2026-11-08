@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
 import app.wordgame.android.attempt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -49,18 +51,18 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Bienvenue", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.welcome), style = MaterialTheme.typography.headlineMedium)
             Text(
-                if (pendingGoogle == null) "Choisis un pseudo pour jouer avec tes amis."
-                else "Aucun compte n'est associé à ce compte Google : choisis un pseudo, ton nouveau compte y sera associé.",
+                if (pendingGoogle == null) stringResource(R.string.onboarding_pick)
+                else stringResource(R.string.onboarding_google_new),
             )
             OutlinedTextField(
                 value = nickname,
                 onValueChange = { nickname = it.trim().take(16) },
-                label = { Text("Pseudo") },
+                label = { Text(stringResource(R.string.nickname)) },
                 singleLine = true,
                 isError = error != null,
-                supportingText = { Text(error ?: "3 à 16 caractères : lettres, chiffres, _ ou -") },
+                supportingText = { Text(error ?: stringResource(R.string.nickname_rule)) },
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
@@ -74,7 +76,7 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
                         busy = false
                     }
                 },
-            ) { Text("Commencer") }
+            ) { Text(stringResource(R.string.start)) }
             if (googleSignInAvailable && pendingGoogle == null) {
                 TextButton(
                     enabled = !busy,
@@ -94,7 +96,7 @@ fun OnboardingScreen(api: ApiClient, onRegistered: (String) -> Unit) {
                             busy = false
                         }
                     },
-                ) { Text("J'ai déjà un compte : se connecter avec Google") }
+                ) { Text(stringResource(R.string.sign_in_google)) }
             }
         }
     }

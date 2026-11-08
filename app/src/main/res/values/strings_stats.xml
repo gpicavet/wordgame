@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stats screen (StatsScreen.kt). French: values-fr/. -->
+<resources>
+    <string name="stats_title">My stats</string>
+    <string name="stats_loading">Loading…</string>
+    <string name="stats_wins">Wins</string>
+    <plurals name="stats_wins_caption">
+        <item quantity="one">out of %d game</item>
+        <item quantity="other">out of %d games</item>
+    </plurals>
+    <string name="stats_average_score">Average score</string>
+    <string name="stats_per_game">per game</string>
+    <string name="stats_points">Points</string>
+    <string name="stats_per_turn">per turn</string>
+    <string name="stats_bingos">Bingos</string>
+    <string name="stats_bingos_caption">all 7 tiles played</string>
+    <string name="stats_share">Points found</string>
+    <string name="stats_share_caption">of the points possible on your turns</string>
+    <string name="stats_hints">Hints</string>
+    <plurals name="stats_hint_turns">
+        <item quantity="one">turn helped</item>
+        <item quantity="other">turns helped</item>
+    </plurals>
+    <string name="stats_no_hints">No hints</string>
+    <plurals name="stats_no_hints_caption">
+        <item quantity="one">wins out of %d game</item>
+        <item quantity="other">wins out of %d games</item>
+    </plurals>
+    <string name="stats_progress">Progress</string>
+    <string name="stats_chart_score">Score</string>
+    <string name="stats_chart_share" formatted="false">% of possible points</string>
+    <string name="stats_chart_empty">The chart will appear after 2 finished games.</string>
+    <string name="stats_records">Records</string>
+    <string name="stats_best_move">Best move</string>
+    <string name="stats_best_move_value">%1$s: %2$d pts against %3$s</string>
+    <string name="stats_best_game">Best game</string>
+    <string name="stats_best_game_value">%1$d pts against %2$s (%3$s)</string>
+    <string name="stats_longest_word">Longest word</string>
+    <string name="stats_longest_word_value">%1$s (%2$d letters)</string>
+    <string name="stats_average_margin">Average margin</string>
+    <string name="stats_average_margin_value">%1$s pts per game</string>
+    <string name="stats_by_opponent">By opponent</string>
+    <string name="stats_finished_games">Finished games</string>
+    <!-- One-letter results, in the per-opponent and finished-games lists. -->
+    <string name="stats_win_short">W</string>
+    <string name="stats_loss_short">L</string>
+    <string name="stats_draw_short">D</string>
+    <string name="stats_win">win</string>
+    <string name="stats_loss">loss</string>
+    <string name="stats_draw">draw</string>
+    <string name="stats_legend_dots">● win   ○ loss</string>
+    <string name="stats_legend_average">— average over %1$d games</string>
+    <string name="stats_selected">%1$s against %2$s: %3$d – %4$d (%5$s)</string>
+    <string name="stats_selected_share">, %1$s of possible points</string>
+    <string name="stats_selected_average">, average %1$s</string>
+</resources>

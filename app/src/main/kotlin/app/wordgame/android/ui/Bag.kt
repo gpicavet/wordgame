@@ -26,11 +26,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.wordgame.android.R
 import app.wordgame.engine.BLANK
 import app.wordgame.engine.Board
 import app.wordgame.engine.RuleSet
@@ -55,8 +58,9 @@ fun unseenTiles(game: GameView): Map<Char, Int> {
 /** Number of tiles left; [onClick] (shows the bag's contents) is null when the contents must stay hidden. */
 fun BagButton(bagCount: Int, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.primary
+    val description = pluralStringResource(R.plurals.bag_content_description, bagCount, bagCount)
     Box(
-        modifier.size(44.dp).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).semantics { contentDescription = "$bagCount lettres dans le sac" },
+        modifier.size(44.dp).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize().padding(2.dp)) {
@@ -95,11 +99,11 @@ fun UnseenTilesDialog(game: GameView, onDismiss: () -> Unit) {
     val opponentRack = game.players.filterIndexed { i, _ -> i != game.mySeat }.sumOf { it.rackCount }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Lettres restantes : ${unseen.values.sum()}") },
+        title = { Text(stringResource(R.string.bag_unseen_title, unseen.values.sum())) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "${game.bagCount} dans le sac et $opponentRack sur le chevalet adverse.",
+                    stringResource(R.string.bag_unseen_detail, game.bagCount, opponentRack),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 LazyVerticalGrid(
@@ -127,6 +131,6 @@ fun UnseenTilesDialog(game: GameView, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.analysis_close)) } },
     )
 }

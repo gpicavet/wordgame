@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.stringResource
+import app.wordgame.android.R
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.IconButton
@@ -15,7 +17,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BackButton(onClick: () -> Unit) {
     val color = MaterialTheme.colorScheme.primary
-    IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = "Retour" }) {
+    val back = stringResource(R.string.back)
+    IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = back }) {
         Canvas(Modifier.size(20.dp)) {
             val w = size.width
             val h = size.height

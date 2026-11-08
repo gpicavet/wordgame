@@ -24,7 +24,7 @@ suspend fun googleIdToken(context: Context): String? {
         return null
     }
     check(credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-        "Réponse inattendue de Google"
+        Strings.get(R.string.google_unexpected)
     }
     return GoogleIdTokenCredential.createFrom(credential.data).idToken
 }

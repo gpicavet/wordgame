@@ -51,6 +51,10 @@ android {
         }
     }
 
+    // Languages of the app (values/: English, values-fr/: French), listed for the per-app language setting
+    // of Android 13+ (res/resources.properties gives the language of values/).
+    androidResources { generateLocaleConfig = true }
+
     buildFeatures {
         compose = true
         buildConfig = true

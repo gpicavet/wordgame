@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="analysis_exchange">
+        <item quantity="one">Échange de %d lettre</item>
+        <item quantity="other">Échange de %d lettres</item>
+    </plurals>
+    <string name="analysis_pass">Passe</string>
+    <string name="analysis_verdict_none">aucun mot n\'était possible</string>
+    <string name="analysis_verdict_best">c\'était le meilleur coup !</string>
+    <string name="analysis_verdict_score">meilleur coup : %1$d points</string>
+    <string name="analysis_candidate">%1$s : %2$d pts</string>
+    <string name="analysis_candidate_blank">%1$s : %2$d pts (joker)</string>
+    <string name="analysis_close">Fermer</string>
+
+    <string name="analysis_grade_perfect">Parfait</string>
+    <string name="analysis_grade_great">Très bien</string>
+    <string name="analysis_grade_good">Bien</string>
+    <string name="analysis_grade_fair">Moyen</string>
+    <string name="analysis_grade_weak">À revoir</string>
+
+    <string name="analysis_tip_more_points">Un autre coup rapportait %1$d points de plus.</string>
+    <string name="analysis_tip_q_without_u">Tu gardes un Q sans U : il est très difficile à placer.</string>
+    <string name="analysis_tip_blank_spent">Tu as joué un joker pour peu de points : garde-le plutôt pour un scrabble.</string>
+    <string name="analysis_tip_too_many_vowels">Tu gardes trop de voyelles : vise autant de voyelles que de consonnes.</string>
+    <string name="analysis_tip_too_many_consonants">Tu gardes trop de consonnes : vise autant de voyelles que de consonnes.</string>
+    <string name="analysis_tip_duplicates">Tu gardes des lettres en double : elles se combinent mal.</string>
+    <string name="analysis_tip_weak_leave">Les lettres que tu gardes se placent mal : un autre coup laissait un meilleur tirage.</string>
+    <string name="analysis_tip_opens_triple_word">Ton coup ouvre une case mot compte triple à l\'adversaire.</string>
+    <string name="analysis_tip_opens_premiums">Ton coup ouvre des cases bonus à l\'adversaire.</string>
+    <string name="analysis_tip_endgame_leave">Le sac est vide : place d\'abord tes lettres chères, elles comptent contre toi à la fin.</string>
+
+    <string name="analysis_criterion_score">Points marqués</string>
+    <string name="analysis_criterion_leave">Lettres gardées</string>
+    <string name="analysis_criterion_board">Cases laissées à l\'adversaire</string>
+    <string name="analysis_criterion_bag">Tirage et fin de partie</string>
+    <string name="analysis_criterion_line">%1$s : %2$s</string>
+
+    <string name="analysis_advice_best">C\'était le meilleur coup !</string>
+    <string name="analysis_advice_close">Un autre coup était un peu meilleur, en points et en lettres gardées.</string>
+
+    <string name="analysis_your_move">Ton coup : %1$s</string>
+    <string name="analysis_gap_title">Écart avec le meilleur coup, en points :</string>
+    <string name="analysis_best_possible">Meilleur score possible : %1$d points</string>
+    <string name="analysis_grade_explained">La note compare ton coup au meilleur selon IroBot : les points marqués, mais aussi les lettres gardées et les cases laissées à l\'adversaire.</string>
+
+    <string name="analysis_title">Analyse de la partie</string>
+    <string name="analysis_computing">Calcul des meilleurs coups…</string>
+    <string name="analysis_no_moves">Aucun coup à analyser : les chevalets n\'étaient pas encore enregistrés pour cette partie.</string>
+    <string name="analysis_summary">Tu as marqué %1$d points sur %2$d possibles</string>
+    <string name="analysis_summary_share">Tu as marqué %1$d points sur %2$d possibles (%3$s)</string>
+    <plurals name="analysis_best_count">
+        <item quantity="one">%1$d meilleur coup sur %2$d</item>
+        <item quantity="other">%1$d meilleurs coups sur %2$d</item>
+    </plurals>
+    <string name="analysis_average_grade">Note moyenne : %1$s/10</string>
+    <string name="analysis_tap_hint">Touche un coup pour le voir sur le plateau.</string>
+    <string name="analysis_move_header">Coup %1$d · chevalet %2$s</string>
+    <string name="analysis_played">Joué : %1$s</string>
+    <string name="analysis_no_word">Aucun mot n\'était possible.</string>
+    <string name="analysis_grade_line">Note : %1$d/10 · %2$s</string>
+
+    <string name="hints_title">Indices</string>
+    <string name="hints_searching">Recherche…</string>
+    <string name="hints_unavailable">Indices indisponibles.</string>
+    <string name="hints_no_bingo">Aucun scrabble possible avec ces lettres.</string>
+    <plurals name="hints_bingo_count">
+        <item quantity="one">%d scrabble possible :</item>
+        <item quantity="other">%d scrabbles possibles :</item>
+    </plurals>
+    <string name="hints_show">Voir</string>
+    <plurals name="hints_more">
+        <item quantity="one">…et %d plus difficile.</item>
+        <item quantity="other">…et %d plus difficiles.</item>
+    </plurals>
+    <string name="hints_best_score">Meilleur score possible : %1$d points</string>
+    <string name="hints_easy">Facile</string>
+    <string name="hints_medium">Moyen</string>
+    <string name="hints_hard">Difficile</string>
+    <string name="hints_common">Mot courant</string>
+    <string name="hints_rare">Mot rare</string>
+    <string name="hints_rack_only">tes 7 lettres seules</string>
+    <plurals name="hints_board_letters">
+        <item quantity="one">avec %d lettre de la grille</item>
+        <item quantity="other">avec %d lettres de la grille</item>
+    </plurals>
+    <plurals name="hints_cross_words">
+        <item quantity="one">forme %d autre mot</item>
+        <item quantity="other">forme %d autres mots</item>
+    </plurals>
+    <string name="hints_points">%1$d points</string>
+
+    <plurals name="bag_content_description">
+        <item quantity="one">%d lettre dans le sac</item>
+        <item quantity="other">%d lettres dans le sac</item>
+    </plurals>
+    <string name="bag_unseen_title">Lettres restantes : %1$d</string>
+    <string name="bag_unseen_detail">%1$d dans le sac et %2$d sur le chevalet adverse.</string>
+    <plurals name="bag_tile_description">
+        <item quantity="one">%1$s, %2$d point</item>
+        <item quantity="other">%1$s, %2$d points</item>
+    </plurals>
+</resources>

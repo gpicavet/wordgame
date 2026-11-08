@@ -34,8 +34,8 @@ object Push {
     val gameUpdates = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     fun createChannel(context: Context) {
-        val channel = NotificationChannel(CHANNEL_TURNS, "Tours de jeu", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Quand c'est à toi de jouer, et les fins de partie"
+        val channel = NotificationChannel(CHANNEL_TURNS, context.getString(R.string.channel_turns), NotificationManager.IMPORTANCE_HIGH).apply {
+            description = context.getString(R.string.channel_turns_description)
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }

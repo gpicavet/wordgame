@@ -45,6 +45,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,7 @@ class WordgameApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Strings.init(this)
         Push.createChannel(this)
         Push.syncToken(this)
     }
@@ -172,6 +174,8 @@ class ApiClient(val session: Session) {
         defaultRequest {
             url(BuildConfig.API_URL)
             header(APP_VERSION_HEADER, BuildConfig.VERSION_CODE)
+            // The server answers (errors, notifications) in the app's language.
+            header(HttpHeaders.AcceptLanguage, java.util.Locale.getDefault().toLanguageTag())
         }
         retrySafeCalls()
     }
