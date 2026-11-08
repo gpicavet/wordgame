@@ -16,6 +16,8 @@ import app.wordgame.engine.WordList
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.BestMove
+import app.wordgame.protocol.BlockedPlayer
+import app.wordgame.protocol.ReportRequest
 import app.wordgame.protocol.CreateGameRequest
 import app.wordgame.protocol.FinishedGame
 import app.wordgame.protocol.GameResult
@@ -28,6 +30,7 @@ import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.MoveView
 import app.wordgame.protocol.PlayerView
 import io.ktor.http.HttpStatusCode
+import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.sql.Connection
@@ -88,6 +91,7 @@ class GameService(
         if (!NICKNAME.matches(nickname)) {
             throw ApiException(HttpStatusCode.BadRequest, "INVALID_NICKNAME", "3 à 16 caractères : lettres, chiffres, _ ou -")
         }
+        Nicknames.refusal(nickname)?.let { throw ApiException(HttpStatusCode.BadRequest, "NICKNAME_REFUSED", it) }
         val google = googleIdToken?.let { googleSubject(it) }
         return db.tx {
             if (google != null) checkGoogleFree(google, null)
@@ -199,6 +203,8 @@ class GameService(
         update("DELETE FROM sessions WHERE user_id = ?", user.id)
         update("DELETE FROM matchmaking WHERE user_id = ?", user.id)
         update("DELETE FROM hints WHERE user_id = ?", user.id)
+        update("DELETE FROM blocks WHERE user_id = ? OR blocked_id = ?", user.id, user.id)
+        update("DELETE FROM reports WHERE reporter_id = ? OR reported_id = ?", user.id, user.id)
         val stillInGames = query("SELECT 1 FROM game_players WHERE user_id = ? LIMIT 1", user.id) { true }.isNotEmpty()
         if (stillInGames) {
             update(
@@ -335,7 +341,15 @@ class GameService(
         val names = request.friends.ifEmpty { listOfNotNull(request.opponentNickname) }
         if (names.isEmpty() && request.bots.isEmpty()) throw ApiException(HttpStatusCode.BadRequest, "NO_OPPONENT", "Choisis au moins un adversaire")
         if (names.size + request.bots.size > 3) throw ApiException(HttpStatusCode.BadRequest, "TOO_MANY_PLAYERS", "4 joueurs au plus")
-        val friends = names.map { findPlayer(it) }
+        val friends = names.map { name ->
+            findPlayer(name).also { friend ->
+                if (blocked(user.id, friend.id)) {
+                    throw ApiException(HttpStatusCode.Forbidden, "PLAYER_BLOCKED", "Tu as bloqué ${friend.nickname} : débloque ce joueur dans Mon compte")
+                }
+                // Blocked by them: they do not exist for the caller.
+                if (blocked(friend.id, user.id)) throw ApiException(HttpStatusCode.NotFound, "UNKNOWN_PLAYER", "Joueur introuvable : $name")
+            }
+        }
         if (friends.any { it.id == user.id }) throw ApiException(HttpStatusCode.BadRequest, "SELF_GAME", "Impossible de jouer contre soi-même")
         if (friends.map { it.id }.toSet().size < friends.size) {
             throw ApiException(HttpStatusCode.BadRequest, "DUPLICATE_PLAYER", "Chaque joueur ne peut être choisi qu'une fois")
@@ -365,8 +379,11 @@ class GameService(
         checkActiveGameLimit(user)
         val waiting = query(
             """SELECT u.id, u.nickname FROM matchmaking m JOIN users u ON u.id = m.user_id
-               WHERE m.user_id <> ? AND m.language = ? ORDER BY m.queued_at LIMIT 1""",
-            user.id, language,
+               WHERE m.user_id <> ? AND m.language = ?
+                 AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.user_id = m.user_id AND b.blocked_id = ?)
+                                                         OR (b.user_id = ? AND b.blocked_id = m.user_id))
+               ORDER BY m.queued_at LIMIT 1""",
+            user.id, language, user.id, user.id,
         ) { User(it.getString(1), it.getString(2)) }.firstOrNull()
         if (waiting == null) {
             // Waiting for one language at a time: the latest request wins.
@@ -382,6 +399,59 @@ class GameService(
 
     suspend fun leaveMatchmaking(user: User) = db.tx {
         update("DELETE FROM matchmaking WHERE user_id = ?", user.id)
+    }
+
+    /** [blocker] blocked [other]. */
+    private fun Connection.blocked(blocker: String, other: String) =
+        query("SELECT 1 FROM blocks WHERE user_id = ? AND blocked_id = ?", blocker, other) { true }.isNotEmpty()
+
+    /** The other human at [seat] of a game of [user]'s: the one players block or report, from the game screen. */
+    private fun Connection.playerAt(user: User, gameId: String, seat: Int): User {
+        val game = load(gameId)
+        val mine = game.seatOf(user)
+        val other = game.seats.getOrNull(seat)
+        if (other == null || seat == mine || other.userId == user.id || other.bot != null) {
+            throw ApiException(HttpStatusCode.BadRequest, "INVALID_PLAYER", "Ce joueur ne peut pas être signalé ni bloqué")
+        }
+        return query("SELECT id, nickname, tag, token_hash FROM users WHERE id = ?", other.userId) {
+            User(it.getString(1), it.getString(2), it.getInt(3)) to it.getString(4)
+        }.single().let { (player, state) ->
+            if (state.startsWith(DELETED)) throw ApiException(HttpStatusCode.Gone, "PLAYER_DELETED", "Ce joueur a supprimé son compte")
+            player
+        }
+    }
+
+    /**
+     * [user] blocks the player at [seat] of a game: neither can challenge the other any more, and matchmaking no
+     * longer pairs them. Games already started go on (either may resign).
+     */
+    suspend fun block(user: User, gameId: String, seat: Int) = db.tx {
+        val player = playerAt(user, gameId, seat)
+        update("INSERT OR IGNORE INTO blocks(user_id, blocked_id, created_at) VALUES (?, ?, ?)", user.id, player.id, now())
+    }
+
+    /** [user] reports the player at [seat] of a game, for the moderator (and blocks them too if asked). */
+    suspend fun report(user: User, gameId: String, seat: Int, request: ReportRequest) = db.tx {
+        val player = playerAt(user, gameId, seat)
+        val details = request.details?.trim()?.take(MAX_REPORT_DETAILS)?.takeIf { it.isNotEmpty() }
+        update(
+            "INSERT INTO reports(reporter_id, reported_id, reported_nickname, game_id, reason, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            user.id, player.id, "${player.nickname}#${player.tag}", gameId, request.reason.name, details, now(),
+        )
+        if (request.block) update("INSERT OR IGNORE INTO blocks(user_id, blocked_id, created_at) VALUES (?, ?, ?)", user.id, player.id, now())
+        // The moderator reads them in the server log (journalctl -u wordgame | grep Report) then in the reports table.
+        log.warn("Report: {}#{} by {}, reason {}", player.nickname, player.tag, user.id, request.reason)
+    }
+
+    suspend fun blockedPlayers(user: User): List<BlockedPlayer> = db.tx {
+        query(
+            "SELECT u.id, u.nickname, u.tag FROM blocks b JOIN users u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY u.nickname",
+            user.id,
+        ) { BlockedPlayer(it.getString(1), if (it.getInt(3) > 0) "${it.getString(2)}#${it.getInt(3)}" else it.getString(2)) }
+    }
+
+    suspend fun unblock(user: User, blockedId: String) = db.tx {
+        update("DELETE FROM blocks WHERE user_id = ? AND blocked_id = ?", user.id, blockedId)
     }
 
     /** A player may delete a game until every player has made at least one move (an ignored challenge). */
@@ -684,6 +754,8 @@ class GameService(
 
     private companion object {
         const val MAX_ACTIVE_GAMES = 30
+        const val MAX_REPORT_DETAILS = 500
+        val log = LoggerFactory.getLogger("wordgame")
         /** A player's turns, where they chose what to play: the ones compared with the best move. */
         val TURNS = setOf(MoveType.PLAY, MoveType.PASS, MoveType.EXCHANGE)
         val NICKNAME = Regex("^[A-Za-z0-9_-]{3,16}$")

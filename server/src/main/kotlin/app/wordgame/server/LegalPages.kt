@@ -34,10 +34,13 @@ et ne vend ni ne partage aucune donnée. Cette page dit quelles données il util
 <tr><td>Tes parties en ligne : coups joués, scores, dates</td><td>Faire fonctionner les parties et calculer tes statistiques.</td></tr>
 <tr><td>Les tours où tu as demandé des indices</td><td>Tes statistiques.</td></tr>
 <tr><td>Le jeton de notification de ton téléphone</td><td>T'avertir quand c'est ton tour ou qu'on te défie.</td></tr>
+<tr><td>Les joueurs que tu bloques</td><td>Ne plus vous proposer de partie ensemble.</td></tr>
+<tr><td>Les signalements que tu envoies ou qui te concernent (motif, précisions, partie)</td><td>Modérer les pseudos et les abus.</td></tr>
 </table>
 <p>WordWok ne demande ni nom, ni adresse e-mail, ni numéro de téléphone, ni âge, et n'utilise pas ta position ni tes contacts.
-Les journaux techniques du serveur ne notent que son démarrage et ses erreurs, sans adresse IP ; ils sont effacés au bout
-de 30 jours.</p>
+Les journaux techniques du serveur ne notent que son démarrage, ses erreurs et les signalements, sans adresse IP ; ils sont
+effacés au bout de 30 jours. Pour limiter les abus, le serveur compte en mémoire les requêtes par adresse IP pendant au plus
+une heure, sans les enregistrer.</p>
 
 <h2>Ce qui reste sur ton téléphone</h2>
 <p>Ton jeton de connexion, ton pseudo et tes parties solo contre les robots restent sur ton téléphone et ne sont pas envoyés
@@ -123,6 +126,7 @@ $byGoogle
 <li>ton pseudo et son numéro, l'accès au compte et son lien avec ton compte Google ;</li>
 <li>les jetons de notification de tes téléphones ;</li>
 <li>tes parties contre des robots, et tes demandes d'indices ;</li>
+<li>les joueurs que tu as bloqués, et les signalements que tu as envoyés ou qui te concernent ;</li>
 <li>depuis l'application, les parties solo enregistrées sur le téléphone (sinon, elles disparaissent en désinstallant l'application).</li>
 </ul>
 <p>Les sauvegardes quotidiennes du serveur sont détruites au bout de 14 jours.</p>

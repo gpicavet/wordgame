@@ -8,7 +8,11 @@ import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.Refusals
 import app.wordgame.engine.RuleSet
+import app.wordgame.protocol.APP_VERSION_HEADER
 import app.wordgame.protocol.ApiError
+import app.wordgame.protocol.BlockedPlayer
+import app.wordgame.protocol.ReportReason
+import app.wordgame.protocol.ReportRequest
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.CreateGameRequest
@@ -36,10 +40,14 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -161,8 +169,30 @@ fun HttpClientConfig<*>.retrySafeCalls(delayStepMs: Long = 500) {
 class ApiClient(val session: Session) {
     private val http = HttpClient(OkHttp) {
         install(ContentNegotiation) { json(ApiJson) }
-        defaultRequest { url(BuildConfig.API_URL) }
+        defaultRequest {
+            url(BuildConfig.API_URL)
+            header(APP_VERSION_HEADER, BuildConfig.VERSION_CODE)
+        }
         retrySafeCalls()
+    }
+
+    private val _upgradeRequired = MutableStateFlow(false)
+    /** The server refused this version of the app (too old for its API): the app asks to update it. */
+    val upgradeRequired: StateFlow<Boolean> get() = _upgradeRequired
+
+    /** Reports the player at [seat] of a game (and blocks them if [block]). */
+    suspend fun report(gameId: String, seat: Int, reason: ReportReason, details: String?, block: Boolean) {
+        http.post("/api/v1/games/$gameId/players/$seat/report") { auth(); json(ReportRequest(reason, details, block)) }.result<Unit>()
+    }
+
+    suspend fun block(gameId: String, seat: Int) {
+        http.post("/api/v1/games/$gameId/players/$seat/block") { auth() }.result<Unit>()
+    }
+
+    suspend fun blockedPlayers(): List<BlockedPlayer> = http.get("/api/v1/me/blocks") { auth() }.result()
+
+    suspend fun unblock(userId: String) {
+        http.delete("/api/v1/me/blocks/$userId") { auth() }.result<Unit>()
     }
 
     /** [googleIdToken]: also link the new account to that Google account. */
@@ -228,6 +258,7 @@ class ApiClient(val session: Session) {
 
     private suspend inline fun <reified T> HttpResponse.result(): T {
         if (status.isSuccess()) return if (T::class == Unit::class) Unit as T else body()
+        if (status == HttpStatusCode.UpgradeRequired) _upgradeRequired.value = true
         val error = runCatching { body<ApiError>() }.getOrNull() ?: ApiError("HTTP_${status.value}", status.description)
         throw ApiFailure(error)
     }

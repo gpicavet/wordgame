@@ -5,7 +5,11 @@ import app.wordgame.engine.GameStatus
 import app.wordgame.engine.Placement
 import app.wordgame.engine.RuleSet
 import app.wordgame.engine.WordList
+import app.wordgame.protocol.APP_VERSION_HEADER
 import app.wordgame.protocol.ApiError
+import app.wordgame.protocol.BlockedPlayer
+import app.wordgame.protocol.ReportReason
+import app.wordgame.protocol.ReportRequest
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.AuthResponse
 import app.wordgame.protocol.CreateGameRequest
@@ -25,6 +29,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -50,12 +55,14 @@ class ApiTest {
     private fun withApp(
         bots: List<ServerBot> = emptyList(),
         google: GoogleTokens? = fakeGoogle,
+        minAppVersion: Int = 0,
+        limits: Limits = Limits(),
         block: suspend ApplicationTestBuilder.(HttpClient, GameService) -> Unit,
     ) {
         val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
         val service = GameService(Database(dbFile.path), dictionaries, bots = bots, google = google)
         testApplication {
-            application { wordgame(service) }
+            application { wordgame(service, minAppVersion = minAppVersion, limits = limits) }
             val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
             block(client, service)
         }
@@ -446,6 +453,86 @@ class ApiTest {
 
     private suspend fun HttpClient.view(token: String, id: String): GameView =
         get("/api/v1/games/$id") { bearerAuth(token) }.body()
+
+    @Test
+    fun offensiveAndReservedNicknamesAreRefused() = withApp { client, _ ->
+        for (nickname in listOf("connard", "Gros_Con", "c0nnard93", "admin", "IroBot")) {
+            val response = client.post("/api/v1/auth/register") {
+                contentType(ContentType.Application.Json)
+                setBody(RegisterRequest(nickname))
+            }
+            assertEquals(HttpStatusCode.BadRequest, response.status, nickname)
+            assertEquals("NICKNAME_REFUSED", response.body<ApiError>().code)
+        }
+    }
+
+    @Test
+    fun blockedPlayersCanNoLongerChallengeEachOtherNorBePaired() = withApp { client, _ ->
+        val alice = client.register("alice")
+        val bob = client.register("bob")
+        val game: GameView = client.create(alice.token, CreateGameRequest(friends = listOf("bob"))).body()
+        val bobSeat = game.players.indexOfFirst { it.nickname == "bob" }
+        // Reported and blocked by Alice, from their game.
+        val report = client.post("/api/v1/games/${game.id}/players/$bobSeat/report") {
+            bearerAuth(alice.token)
+            contentType(ContentType.Application.Json)
+            setBody(ReportRequest(ReportReason.NICKNAME, "pas sympa", block = true))
+        }
+        assertEquals(HttpStatusCode.NoContent, report.status)
+        val blocked: List<BlockedPlayer> = client.get("/api/v1/me/blocks") { bearerAuth(alice.token) }.body()
+        assertEquals(listOf("bob#${bob.tag}"), blocked.map { it.name })
+
+        val byAlice = client.create(alice.token, CreateGameRequest(friends = listOf("bob")))
+        assertEquals("PLAYER_BLOCKED", byAlice.body<ApiError>().code)
+        // Bob is not told he is blocked.
+        val byBob = client.create(bob.token, CreateGameRequest(friends = listOf("alice")))
+        assertEquals("UNKNOWN_PLAYER", byBob.body<ApiError>().code)
+        client.post("/api/v1/matchmaking") { bearerAuth(alice.token) }
+        val paired: MatchmakingResponse = client.post("/api/v1/matchmaking") { bearerAuth(bob.token) }.body()
+        assertEquals(null, paired.gameId)
+
+        // Not oneself, nor a seat that does not exist.
+        val mySeat = 1 - bobSeat
+        assertEquals(HttpStatusCode.BadRequest, client.post("/api/v1/games/${game.id}/players/$mySeat/block") { bearerAuth(alice.token) }.status)
+        assertEquals(HttpStatusCode.BadRequest, client.post("/api/v1/games/${game.id}/players/7/block") { bearerAuth(alice.token) }.status)
+
+        client.delete("/api/v1/me/blocks/${blocked.single().userId}") { bearerAuth(alice.token) }
+        client.delete("/api/v1/matchmaking") { bearerAuth(alice.token) }
+        assertEquals(HttpStatusCode.OK, client.create(alice.token, CreateGameRequest(friends = listOf("bob"))).status)
+    }
+
+    @Test
+    fun tooOldAppsAreAskedToUpdate() = withApp(minAppVersion = 3) { client, _ ->
+        val old = client.post("/api/v1/auth/register") {
+            header(APP_VERSION_HEADER, "2")
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("alice"))
+        }
+        assertEquals(HttpStatusCode.UpgradeRequired, old.status)
+        assertEquals("UPGRADE_REQUIRED", old.body<ApiError>().code)
+        val current = client.post("/api/v1/auth/register") {
+            header(APP_VERSION_HEADER, "3")
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("alice"))
+        }
+        assertEquals(HttpStatusCode.OK, current.status)
+        // Without the header (the deletion page, tools): not checked.
+        assertEquals(HttpStatusCode.OK, client.get("/api/v1/me") { bearerAuth(current.body<AuthResponse>().token) }.status)
+    }
+
+    @Test
+    fun signUpsAndCallsAreRateLimited() = withApp(limits = Limits(signUps = 2, calls = 3)) { client, _ ->
+        val alice = client.register("alice")
+        client.register("bob")
+        val third = client.post("/api/v1/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("carol"))
+        }
+        assertEquals(HttpStatusCode.TooManyRequests, third.status)
+        assertEquals("TOO_MANY_REQUESTS", third.body<ApiError>().code)
+        val statuses = (1..4).map { client.get("/api/v1/games") { bearerAuth(alice.token) }.status }
+        assertEquals(listOf(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests), statuses)
+    }
 
     /** A robot that always passes: enough to check that the server plays its turns. */
     private val passingBot = ServerBot("nono", "NonoBot") { _, _, _ -> Action.Pass }

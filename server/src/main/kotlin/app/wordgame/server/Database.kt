@@ -131,6 +131,23 @@ class Database(path: String) : AutoCloseable {
                 user_id TEXT NOT NULL REFERENCES users(id),
                 move_number INTEGER NOT NULL,
                 PRIMARY KEY (game_id, user_id, move_number))""",
+            // user_id blocked blocked_id: they can no longer challenge each other nor be paired (both ways).
+            """CREATE TABLE IF NOT EXISTS blocks (
+                user_id TEXT NOT NULL REFERENCES users(id),
+                blocked_id TEXT NOT NULL REFERENCES users(id),
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, blocked_id))""",
+            "CREATE INDEX IF NOT EXISTS blocks_blocked ON blocks(blocked_id)",
+            // Reports, for the moderator (see README, "Modération"); the nickname as it was when reported.
+            """CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id TEXT NOT NULL,
+                reported_id TEXT NOT NULL,
+                reported_nickname TEXT NOT NULL,
+                game_id TEXT,
+                reason TEXT NOT NULL,
+                details TEXT,
+                created_at INTEGER NOT NULL)""",
         )
         val MIGRATIONS = listOf(
             "ALTER TABLE matchmaking ADD COLUMN language TEXT NOT NULL DEFAULT 'fr'",

@@ -88,6 +88,21 @@ Suppression du compte (exigée par Google Play) : depuis l'app (*Mon compte*), o
 
 Le serveur valide tout : tour du joueur, lettres présentes sur son chevalet, géométrie, mots, score recalculé côté serveur. Le sac est mélangé avec `SecureRandom` et n'est jamais envoyé. `expectedMoveNumber` évite qu'un coup soit joué deux fois. Un joueur qui ne joue pas pendant 72 h perd la partie (vérification toutes les 5 minutes).
 
+Limites (`Limits` dans `Application.kt`) : 20 inscriptions ou connexions Google par heure et par adresse IP (derrière Caddy, la dernière adresse de `X-Forwarded-For`), 120 appels par minute et par compte, dont 30 créations de partie ou coups. Au-delà : 429 `TOO_MANY_REQUESTS`.
+
+Version minimale : l'app envoie son `versionCode` dans l'en-tête `X-App-Version`. Si une mise à jour change l'API d'une façon que les anciennes versions ne suivent pas, monter `WORDGAME_MIN_APP_VERSION` (`deploy/wordgame.service`) : les versions plus anciennes reçoivent 426 `UPGRADE_REQUIRED` et l'app affiche « Mise à jour nécessaire » avec un lien vers Google Play. Les requêtes sans en-tête (page de suppression, outils) ne sont pas vérifiées.
+
+## Modération
+
+Les pseudos injurieux ou réservés (staff, robots, WordWok) sont refusés à l'inscription (`Nicknames.kt`, écritures déguisées comprises : « c0nnard », « Gros_Con »). En touchant le nom d'un autre joueur dans une partie, on peut le **bloquer** (plus de défis ni d'appariement entre les deux, la partie en cours continue ; débloquer dans *Mon compte*) ou le **signaler** (pseudo, triche, autre). Les signalements arrivent dans le journal et la table `reports` :
+
+```bash
+ssh wordgame 'journalctl -u wordgame --since "-7 days" | grep Report'
+ssh wordgame 'sqlite3 /var/lib/wordgame/wordgame.db "SELECT id, datetime(created_at/1000, \"unixepoch\"), reported_nickname, reason, details FROM reports ORDER BY id DESC LIMIT 20"'
+# Renommer un pseudo injurieux (le joueur garde son compte et ses parties) :
+ssh wordgame 'sqlite3 /var/lib/wordgame/wordgame.db "UPDATE users SET nickname = \"Joueur\" || substr(id, 1, 6) WHERE nickname = \"…\" AND tag = …"'
+```
+
 ## Déploiement (Scaleway Stardust, 1 vCPU / 1 Go)
 
 ```bash
@@ -136,4 +151,4 @@ Une version signée ne s'installe pas par-dessus une version debug (signatures d
 
 ## Pas encore dans le MVP
 
-Notifications push (FCM) : l'application interroge le serveur toutes les 10 à 15 s tant qu'elle est ouverte. Récupération du compte avec Apple (iOS). Sans compte Google associé, `GameService.releaseAccount` permet de reprendre un compte à la main. Glisser-déposer des lettres et zoom sur le plateau. Bots et solveur. iOS. Limitation du nombre de requêtes.
+iOS (et la récupération du compte avec Apple). Sans compte Google associé, `GameService.releaseAccount` permet de reprendre un compte à la main. Zoom sur le plateau. Rappel avant la perte d'une partie au bout de 72 h. Copie des sauvegardes hors du serveur.

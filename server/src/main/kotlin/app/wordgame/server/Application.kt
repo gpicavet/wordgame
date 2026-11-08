@@ -6,6 +6,7 @@ import app.wordgame.engine.ExtraWords
 import app.wordgame.engine.Lexicon
 import app.wordgame.engine.WordList
 import app.wordgame.engine.plus
+import app.wordgame.protocol.APP_VERSION_HEADER
 import app.wordgame.protocol.ApiError
 import app.wordgame.protocol.ApiJson
 import app.wordgame.protocol.CreateGameRequest
@@ -14,12 +15,14 @@ import app.wordgame.protocol.GoogleRequest
 import app.wordgame.protocol.Me
 import app.wordgame.protocol.MoveRequest
 import app.wordgame.protocol.RegisterRequest
+import app.wordgame.protocol.ReportRequest
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
@@ -30,6 +33,9 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.ratelimit.RateLimit
+import io.ktor.server.plugins.ratelimit.RateLimitName
+import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
@@ -48,6 +54,8 @@ import org.slf4j.event.Level
 import java.io.File
 import java.security.SecureRandom
 import kotlin.random.asKotlinRandom
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
 private val log = LoggerFactory.getLogger("wordgame")
@@ -113,7 +121,10 @@ fun main() {
         port = env["WORDGAME_PORT"]?.toInt() ?: 8080,
         host = env["WORDGAME_HOST"] ?: "0.0.0.0",
     ) {
-        wordgame(service, env["WORDGAME_CONTACT_EMAIL"], googleClientId)
+        // Raised when an app update changes the API in a way older versions cannot follow.
+        val minAppVersion = env["WORDGAME_MIN_APP_VERSION"]?.toIntOrNull() ?: 0
+        log.info("Minimum app version: {}", minAppVersion)
+        wordgame(service, env["WORDGAME_CONTACT_EMAIL"], googleClientId, minAppVersion)
         launch {
             runCatching { service.backfillBestScores() }
                 .onSuccess { if (it > 0) log.info("Best scores computed for {} games", it) }
@@ -131,11 +142,61 @@ fun main() {
 }
 
 /**
- * [contactEmail]: shown on the privacy policy. [googleClientId]: for the Google button of the deletion page
- * (players whose account is linked to Google delete it there, without the app).
+ * Requests allowed per client: [signUps] account creations and Google sign-ins per IP address and [signUpPeriod]
+ * (mobile networks share addresses, hence the margin), [calls] API calls per account and [callPeriod] (the app
+ * polls every 10 s), [moves] of which create games or play (robots answer at once, the costly part).
  */
-fun Application.wordgame(service: GameService, contactEmail: String? = null, googleClientId: String? = null) {
+data class Limits(
+    val signUps: Int = 20,
+    val signUpPeriod: Duration = 1.hours,
+    val calls: Int = 120,
+    val callPeriod: Duration = 1.minutes,
+    val moves: Int = 30,
+)
+
+private val SIGN_UP = RateLimitName("sign-up")
+private val CALLS = RateLimitName("calls")
+private val MOVES = RateLimitName("moves")
+
+/**
+ * [contactEmail]: shown on the privacy policy. [googleClientId]: for the Google button of the deletion page
+ * (players whose account is linked to Google delete it there, without the app). [minAppVersion]: apps with an
+ * older version code are asked to update (426); 0 accepts them all.
+ */
+fun Application.wordgame(
+    service: GameService,
+    contactEmail: String? = null,
+    googleClientId: String? = null,
+    minAppVersion: Int = 0,
+    limits: Limits = Limits(),
+) {
     install(ContentNegotiation) { json(ApiJson) }
+    install(RateLimit) {
+        register(SIGN_UP) {
+            rateLimiter(limit = limits.signUps, refillPeriod = limits.signUpPeriod)
+            requestKey { it.clientAddress() }
+        }
+        register(CALLS) {
+            rateLimiter(limit = limits.calls, refillPeriod = limits.callPeriod)
+            requestKey { it.accountKey() }
+        }
+        register(MOVES) {
+            rateLimiter(limit = limits.moves, refillPeriod = limits.callPeriod)
+            requestKey { it.accountKey() }
+        }
+    }
+    // Before routing: an app too old for this API gets a message asking to update it, whatever it called.
+    intercept(ApplicationCallPipeline.Plugins) {
+        val call = context
+        val version = call.request.headers[APP_VERSION_HEADER]?.toIntOrNull()
+        if (version != null && version < minAppVersion && call.request.path().startsWith("/api/")) {
+            call.respond(
+                HttpStatusCode.UpgradeRequired,
+                ApiError("UPGRADE_REQUIRED", "Une nouvelle version de l'application est disponible : mets-la à jour pour continuer"),
+            )
+            finish()
+        }
+    }
     install(CallLogging) {
         level = Level.INFO
         filter { it.request.path() != "/health" }
@@ -146,6 +207,9 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null, goo
         }
         exception<BadRequestException> { call, e ->
             call.respond(HttpStatusCode.BadRequest, ApiError("BAD_REQUEST", e.message ?: "Bad request"))
+        }
+        status(HttpStatusCode.TooManyRequests) { call, status ->
+            call.respond(status, ApiError("TOO_MANY_REQUESTS", "Trop de requêtes : réessaie dans un moment"))
         }
         exception<Throwable> { call, e ->
             log.error("Unhandled error", e)
@@ -164,13 +228,15 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null, goo
         get("/confidentialite") { call.respondText(privacyPage(contactEmail), ContentType.Text.Html) }
 
         route("/api/v1") {
-            post("/auth/register") {
-                val request = call.receive<RegisterRequest>()
-                call.respond(service.register(request.nickname, request.googleIdToken))
+            rateLimit(SIGN_UP) {
+                post("/auth/register") {
+                    val request = call.receive<RegisterRequest>()
+                    call.respond(service.register(request.nickname, request.googleIdToken))
+                }
+                post("/auth/google") { call.respond(service.signInWithGoogle(call.receive<GoogleRequest>().idToken)) }
             }
-            post("/auth/google") { call.respond(service.signInWithGoogle(call.receive<GoogleRequest>().idToken)) }
 
-            authenticate("auth") {
+            authenticate("auth") { rateLimit(CALLS) {
                 get("/me") {
                     val user = call.user()
                     call.respond(Me(user.id, user.nickname, user.tag, user.google))
@@ -194,8 +260,13 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null, goo
                     service.registerDevice(call.user(), call.receive<DeviceRequest>().token)
                     call.respond(HttpStatusCode.NoContent)
                 }
-                post("/games") {
-                    call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>()))
+                rateLimit(MOVES) {
+                    post("/games") {
+                        call.respond(service.createGame(call.user(), call.receive<CreateGameRequest>()))
+                    }
+                    post("/games/{id}/moves") {
+                        call.respond(service.move(call.user(), call.parameters["id"]!!, call.receive<MoveRequest>()))
+                    }
                 }
                 get("/games/{id}") { call.respond(service.view(call.user(), call.parameters["id"]!!)) }
                 delete("/games/{id}") {
@@ -206,8 +277,18 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null, goo
                     service.recordHint(call.user(), call.parameters["id"]!!)
                     call.respond(HttpStatusCode.NoContent)
                 }
-                post("/games/{id}/moves") {
-                    call.respond(service.move(call.user(), call.parameters["id"]!!, call.receive<MoveRequest>()))
+                post("/games/{id}/players/{seat}/block") {
+                    service.block(call.user(), call.parameters["id"]!!, call.seat())
+                    call.respond(HttpStatusCode.NoContent)
+                }
+                post("/games/{id}/players/{seat}/report") {
+                    service.report(call.user(), call.parameters["id"]!!, call.seat(), call.receive<ReportRequest>())
+                    call.respond(HttpStatusCode.NoContent)
+                }
+                get("/me/blocks") { call.respond(service.blockedPlayers(call.user())) }
+                delete("/me/blocks/{userId}") {
+                    service.unblock(call.user(), call.parameters["userId"]!!)
+                    call.respond(HttpStatusCode.NoContent)
                 }
                 post("/matchmaking") {
                     call.respond(service.matchmake(call.user(), call.request.queryParameters["language"] ?: "fr"))
@@ -216,9 +297,27 @@ fun Application.wordgame(service: GameService, contactEmail: String? = null, goo
                     service.leaveMatchmaking(call.user())
                     call.respond(HttpStatusCode.NoContent)
                 }
-            }
+            } }
         }
     }
 }
 
 private fun ApplicationCall.user(): User = principal<User>()!!
+
+private fun ApplicationCall.seat(): Int =
+    parameters["seat"]?.toIntOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "INVALID_PLAYER", "Joueur invalide")
+
+/**
+ * The client's IP address. Behind Caddy (a connection from this machine), the last address of X-Forwarded-For:
+ * the one Caddy saw, which the client cannot forge.
+ */
+private fun ApplicationCall.clientAddress(): String {
+    val peer = request.local.remoteAddress
+    val local = peer == "127.0.0.1" || peer == "0:0:0:0:0:0:0:1" || peer == "::1" || peer == "localhost"
+    val forwarded = request.headers["X-Forwarded-For"]?.substringAfterLast(',')?.trim()?.takeIf { it.isNotEmpty() }
+    return if (local && forwarded != null) forwarded else peer
+}
+
+/** Per account (its token), or per address without one. */
+private fun ApplicationCall.accountKey(): String =
+    request.headers[HttpHeaders.Authorization] ?: clientAddress()

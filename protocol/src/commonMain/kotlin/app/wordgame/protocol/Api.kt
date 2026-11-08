@@ -15,6 +15,12 @@ val ApiJson = Json {
     classDiscriminator = "type"
 }
 
+/**
+ * The app's version code, sent with every request: the server refuses versions too old for its API
+ * (426, UPGRADE_REQUIRED). Requests without it (web pages, tools) are not checked.
+ */
+const val APP_VERSION_HEADER = "X-App-Version"
+
 /** [googleIdToken]: also link the new account to this Google account ("Sign in with Google" found none). */
 @Serializable
 data class RegisterRequest(val nickname: String, val googleIdToken: String? = null)
@@ -167,3 +173,15 @@ data class PlayerStats(
     /** Share (0 to 1) of the possible points scored over the finished games; null when unknown. */
     val share: Double? = null,
 )
+
+/** Why a player is reported. */
+@Serializable
+enum class ReportReason { NICKNAME, CHEATING, OTHER }
+
+/** Reports the player at a seat of a game; [block]: also block them. */
+@Serializable
+data class ReportRequest(val reason: ReportReason, val details: String? = null, val block: Boolean = false)
+
+/** A player the caller blocked: they can no longer challenge each other nor be paired. */
+@Serializable
+data class BlockedPlayer(val userId: String, val name: String)

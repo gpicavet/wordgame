@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -26,6 +27,7 @@ import app.wordgame.android.ui.GamesScreen
 import app.wordgame.android.ui.AccountDialog
 import app.wordgame.android.ui.OnboardingScreen
 import app.wordgame.android.ui.StatsScreen
+import app.wordgame.android.ui.UpgradeScreen
 import app.wordgame.android.ui.WordgameTheme
 
 class MainActivity : ComponentActivity() {
@@ -80,6 +82,13 @@ private fun WordgameApp(container: AppContainer, notifiedGame: String?, onNotifi
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         Push.syncToken(context)
+    }
+
+    // The server no longer accepts this version: nothing else works until the app is updated.
+    val upgradeRequired by container.api.upgradeRequired.collectAsState()
+    if (upgradeRequired) {
+        UpgradeScreen()
+        return
     }
 
     val gameId = openGameId

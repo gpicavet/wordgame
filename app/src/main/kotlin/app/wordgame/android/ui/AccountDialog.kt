@@ -2,6 +2,10 @@ package app.wordgame.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import app.wordgame.protocol.BlockedPlayer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,7 +41,9 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var blocked by remember { mutableStateOf<List<BlockedPlayer>>(emptyList()) }
     LaunchedEffect(Unit) { attempt { api.me() }.onSuccess { tag = it.tag; google = it.google } }
+    LaunchedEffect(Unit) { attempt { api.blockedPlayers() }.onSuccess { blocked = it } }
 
     if (confirming) {
         AlertDialog(
@@ -86,6 +92,21 @@ fun AccountDialog(api: ApiClient, nickname: String, onDeleted: suspend () -> Uni
                                 busy = false
                             }
                         }) { Text("Sauvegarder avec Google") }
+                    }
+                }
+                if (blocked.isNotEmpty()) {
+                    Text("Joueurs bloqués", fontWeight = FontWeight.Bold)
+                    blocked.forEach { player ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(player.name, Modifier.weight(1f))
+                            TextButton(enabled = !busy, onClick = {
+                                scope.launch {
+                                    attempt { api.unblock(player.userId) }
+                                        .onSuccess { blocked = blocked - player }
+                                        .onFailure { error = it.userMessage() }
+                                }
+                            }) { Text("Débloquer") }
+                        }
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

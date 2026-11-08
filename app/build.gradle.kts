@@ -24,8 +24,10 @@ android {
         applicationId = "app.wordgame.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Sent to the server with every request (X-App-Version): raise it with each release, and the server's
+        // WORDGAME_MIN_APP_VERSION when older versions can no longer follow its API.
+        versionCode = 2
+        versionName = "0.2.0"
         // The VPS. For a local server: -PapiUrl=http://10.0.2.2:8080 (emulator) or http://<Mac IP>:8080 (phone).
         // "Sign in with Google": the Web OAuth client id of the Google Cloud project, the server's
         // WORDGAME_GOOGLE_CLIENT_ID (-PgoogleClientId=… or gradle.properties). Empty: the buttons are hidden.

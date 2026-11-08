@@ -82,6 +82,9 @@ import app.wordgame.protocol.MoveView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
+/** The name the server gives to players who deleted their account. */
+private const val DELETED_PLAYER = "Joueur supprimé"
+
 /** Size of the tile under the finger, and how far above the finger it is drawn so it stays visible. */
 private val DRAGGED_TILE = 44.dp
 private val DRAG_LIFT = 48.dp
@@ -101,6 +104,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     var reviewShown by remember { mutableStateOf(false) }
     var exchanging by remember { mutableStateOf(false) }
     var showHints by remember { mutableStateOf(false) }
+    var playerSeat by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(gameId) { Push.gameUpdates.collect { if (it == gameId) vm.refresh() } }
 
@@ -121,7 +125,15 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { if (game != null) PlayersHeader(game) else Text("Chargement…") },
+                title = {
+                    if (game != null) {
+                        // Other people (not robots, not deleted accounts) can be reported or blocked from here.
+                        PlayersHeader(game, onPlayer = { seat ->
+                            val p = game.players[seat]
+                            if (seat != game.mySeat && !p.bot && p.nickname != DELETED_PLAYER) playerSeat = seat
+                        })
+                    } else Text("Chargement…")
+                },
                 navigationIcon = {
                     BackButton(onBack)
                 },
@@ -261,6 +273,10 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
     val analysis = state.lastMoveAnalysis
     val review = analysis?.review
     if (reviewShown && analysis != null && review != null) MoveReviewDialog(analysis, review, onDismiss = { reviewShown = false })
+    val reported = playerSeat
+    if (reported != null && game != null) {
+        PlayerDialog(container.api, gameId, reported, game.players[reported].nickname, onDismiss = { playerSeat = null })
+    }
     if (showHints) HintsDialog(load = vm::hints, onDismiss = { showHints = false })
     if (showUnseen) state.game?.let { UnseenTilesDialog(it, onDismiss = { showUnseen = false }) }
     if (confirmDelete) {
@@ -287,7 +303,7 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
  * fits. The player to play is highlighted; eliminated players are crossed out.
  */
 @Composable
-private fun PlayersHeader(game: GameView) {
+private fun PlayersHeader(game: GameView, onPlayer: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         game.players.forEachIndexed { seat, player ->
             val current = game.status == GameStatus.ACTIVE && seat == game.currentSeat
@@ -302,6 +318,7 @@ private fun PlayersHeader(game: GameView) {
             }
             Box(
                 Modifier.weight(1f).height(40.dp)
+                    .clickable { onPlayer(seat) }
                     .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(8.dp))
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center,
