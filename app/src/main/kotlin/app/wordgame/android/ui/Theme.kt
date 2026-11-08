@@ -34,11 +34,12 @@ object BoardColors {
         Premium.NONE -> square
     }
 
+    /** "DL", "TW"… in English, "LD", "MT"… in French. */
     fun label(p: Premium) = when (p) {
-        Premium.DOUBLE_LETTER -> "LD"
-        Premium.TRIPLE_LETTER -> "LT"
-        Premium.DOUBLE_WORD -> "MD"
-        Premium.TRIPLE_WORD -> "MT"
+        Premium.DOUBLE_LETTER -> Strings.get(R.string.premium_double_letter)
+        Premium.TRIPLE_LETTER -> Strings.get(R.string.premium_triple_letter)
+        Premium.DOUBLE_WORD -> Strings.get(R.string.premium_double_word)
+        Premium.TRIPLE_WORD -> Strings.get(R.string.premium_triple_word)
         Premium.NONE -> ""
     }
 }

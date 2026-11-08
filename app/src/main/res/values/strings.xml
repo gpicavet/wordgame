@@ -23,8 +23,8 @@
     <string name="status_lost">You lost</string>
     <string name="status_your_turn">Your turn</string>
     <string name="status_their_turn">%1$s\'s turn</string>
-    <string name="remaining_tiles"> · tiles left: %1$s</string>
-    <string name="move_end_bonus"> (+%1$d end bonus)</string>
+    <string name="remaining_tiles">\u0020· tiles left: %1$s</string>
+    <string name="move_end_bonus">\u0020(+%1$d end bonus)</string>
     <string name="move_pass">pass</string>
     <string name="move_pass_blocked">pass, game blocked</string>
     <string name="move_resign">resigned</string>
@@ -138,4 +138,8 @@
     <string name="hints_video_text">You have used your %1$d free hints today. Watch a short video to see the hints for this turn.</string>
     <string name="hints_video_watch">Watch a video</string>
     <string name="ads_privacy_options">Ad privacy settings</string>
+    <string name="premium_double_letter">DL</string>
+    <string name="premium_triple_letter">TL</string>
+    <string name="premium_double_word">DW</string>
+    <string name="premium_triple_word">TW</string>
 </resources>

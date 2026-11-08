@@ -24,8 +24,8 @@
     <string name="status_lost">Partie perdue</string>
     <string name="status_your_turn">À toi de jouer</string>
     <string name="status_their_turn">Au tour de %1$s</string>
-    <string name="remaining_tiles"> · lettres restantes : %1$s</string>
-    <string name="move_end_bonus"> (+%1$d de bonus de fin)</string>
+    <string name="remaining_tiles">\u0020· lettres restantes : %1$s</string>
+    <string name="move_end_bonus">\u0020(+%1$d de bonus de fin)</string>
     <string name="move_pass">passe</string>
     <string name="move_pass_blocked">passe, partie bloquée</string>
     <string name="move_resign">abandon</string>
@@ -137,4 +137,8 @@
     <string name="hints_video_text">Tu as utilisé tes %1$d indices gratuits du jour. Regarde une courte vidéo pour voir les indices de ce tour.</string>
     <string name="hints_video_watch">Regarder une vidéo</string>
     <string name="ads_privacy_options">Confidentialité des publicités</string>
+    <string name="premium_double_letter">LD</string>
+    <string name="premium_triple_letter">LT</string>
+    <string name="premium_double_word">MD</string>
+    <string name="premium_triple_word">MT</string>
 </resources>

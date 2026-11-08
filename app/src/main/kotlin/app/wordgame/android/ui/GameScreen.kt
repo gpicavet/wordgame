@@ -1,5 +1,7 @@
 package app.wordgame.android.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import app.wordgame.android.ads.HintQuota
 import app.wordgame.android.ads.findActivity
@@ -197,12 +199,11 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                         modifier = Modifier.padding(start = 8.dp).size(44.dp),
                     ) { Text("⋯", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                 }
-                // Fixed height so the rack does not jump under the player's finger when a preview appears:
-                // one line per player.
+                // The score preview and the error messages, just above the rack: two lines of fixed height, so the
+                // rack never moves under the player's finger.
                 Box(
-                    Modifier.fillMaxWidth().height(maxOf(48, game.players.size * 18).dp).padding(horizontal = 8.dp).clickable {
-                        if (state.message != null) vm.dismissMessage()
-                    },
+                    Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 8.dp)
+                        .clickable { if (state.message != null) vm.dismissMessage() },
                 ) {
                     val preview = state.preview
                     val message = state.message
@@ -214,7 +215,6 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
                         )
-                        else -> RoundJournal(game, state.lastMoveAnalysis, onReview = { reviewShown = true })
                     }
                 }
                 RackView(state, rules, drag, rackTarget, onTap = vm::selectRackTile, onDrop = onDrop)
@@ -233,6 +233,10 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
                     } else {
                         OutlinedButton(onClick = vm::shuffle) { Text(stringResource(R.string.shuffle)) }
                     }
+                }
+                // The last round, under the buttons: all the height left, scrolling when it is longer.
+                Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 8.dp).verticalScroll(rememberScrollState())) {
+                    RoundJournal(game, state.lastMoveAnalysis, onReview = { reviewShown = true })
                 }
             }
             if (drag.source != null) {
