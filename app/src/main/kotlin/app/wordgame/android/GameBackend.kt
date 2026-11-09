@@ -62,10 +62,18 @@ enum class SoloBot(val gameId: String, val displayName: String, private val leve
 private data class SoloMove(val record: MoveRecord, val playedAt: Long)
 
 @Serializable
-private data class SoloGame(val state: GameState, val moves: List<SoloMove>)
+private data class SoloGame(val state: GameState, val moves: List<SoloMove>, val startedAt: Long? = null)
 
-/** Short description for the games list. */
-data class SoloSummary(val myScore: Int, val botScore: Int, val myTurn: Boolean, val finished: Boolean, val won: Boolean?)
+/** Short description for the games list; times in epoch millis. */
+data class SoloSummary(
+    val myScore: Int,
+    val botScore: Int,
+    val myTurn: Boolean,
+    val finished: Boolean,
+    val won: Boolean?,
+    val startedAt: Long,
+    val updatedAt: Long,
+)
 
 /**
  * One solo game against [bot] in [language], saved in a file on the phone (French keeps the original names). Same rules engine as the server.
@@ -89,16 +97,20 @@ class SoloStore(
     private fun read(): SoloGame? = runCatching { ApiJson.decodeFromString(SoloGame.serializer(), file.readText()) }.getOrNull()
     private fun write(game: SoloGame) = file.writeText(ApiJson.encodeToString(SoloGame.serializer(), game))
 
-    fun summary(): SoloSummary? = read()?.state?.let {
+    fun summary(): SoloSummary? = read()?.let { game ->
+        val it = game.state
+        // Games saved before startedAt existed: their first move, else the file's date.
+        val updatedAt = game.moves.lastOrNull()?.playedAt ?: file.lastModified()
         SoloSummary(it.players[0].score, it.players[1].score, it.status == GameStatus.ACTIVE && it.currentPlayer == 0,
-            it.status == GameStatus.FINISHED, it.winner?.let { w -> w == 0 })
+            it.status == GameStatus.FINISHED, it.winner?.let { w -> w == 0 },
+            startedAt = game.startedAt ?: game.moves.firstOrNull()?.playedAt ?: updatedAt, updatedAt = updatedAt)
     }
 
     /** Starts a new game (replacing a finished or abandoned one); the player or the bot starts at random. */
     suspend fun start() = lock.withLock {
         withContext(Dispatchers.IO) {
             val state = Game.new(RuleSet.defaultFor(language), 2, random)
-            write(SoloGame(state.copy(currentPlayer = random.nextInt(2)), emptyList()))
+            write(SoloGame(state.copy(currentPlayer = random.nextInt(2)), emptyList(), System.currentTimeMillis()))
         }
     }
 
@@ -126,7 +138,7 @@ class SoloStore(
             when (val outcome = Game.apply(current.state, 0, action, lexicon.words, random)) {
                 is MoveOutcome.Rejected -> throw ApiFailure(ApiError(outcome.error.name, outcome.error.name, outcome.unknownWords))
                 is MoveOutcome.Applied -> {
-                    val next = SoloGame(outcome.state, current.moves + SoloMove(outcome.record, System.currentTimeMillis()))
+                    val next = current.copy(state = outcome.state, moves = current.moves + SoloMove(outcome.record, System.currentTimeMillis()))
                     withContext(Dispatchers.IO) { write(next) }
                     view(next)
                 }
@@ -148,7 +160,7 @@ class SoloStore(
         }
         val outcome = Game.apply(game.state, 1, action, lexicon.words, random)
         check(outcome is MoveOutcome.Applied) { "Bot move rejected: $outcome" }
-        return SoloGame(outcome.state, game.moves + SoloMove(outcome.record, System.currentTimeMillis()))
+        return game.copy(state = outcome.state, moves = game.moves + SoloMove(outcome.record, System.currentTimeMillis()))
     }
 
     private fun view(game: SoloGame): GameView {

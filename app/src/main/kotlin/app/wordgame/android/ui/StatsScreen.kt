@@ -58,10 +58,13 @@ import kotlin.math.ceil
 import kotlin.math.floor
 
 /** "8 nov." in French, "Nov 8" in English: day and short month in the order of the phone's language. */
-private fun date(millis: Long): String {
+/** "8 nov.", with the year when it is not this one ("8 nov. 2025"). */
+internal fun date(millis: Long): String {
     val locale = Locale.getDefault()
-    return DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "dMMM"), locale)
-        .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(millis))
+    val zone = ZoneId.systemDefault()
+    val instant = Instant.ofEpochMilli(millis)
+    val skeleton = if (instant.atZone(zone).year == java.time.Year.now(zone).value) "dMMM" else "dMMMy"
+    return DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, skeleton), locale).withZone(zone).format(instant)
 }
 
 /** Window of the moving average drawn over the per-game scores. */

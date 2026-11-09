@@ -98,6 +98,13 @@
     <string name="result_won">Gagné</string>
     <string name="result_lost">Perdu</string>
     <string name="result_draw">Égalité</string>
+    <string name="started_now">Commencée à l\'instant</string>
+    <string name="started_minutes">Commencée il y a %1$d min</string>
+    <string name="started_hours">Commencée il y a %1$d h</string>
+    <plurals name="started_days">
+        <item quantity="one">Commencée il y a %1$d jour</item>
+        <item quantity="other">Commencée il y a %1$d jours</item>
+    </plurals>
     <string name="seat_friend">Ami</string>
     <string name="seat_random">Hasard</string>
     <string name="problem_friend_nickname">Indique le pseudo de chaque ami</string>

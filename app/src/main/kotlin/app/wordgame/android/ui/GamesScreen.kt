@@ -1,5 +1,6 @@
 package app.wordgame.android.ui
 
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import app.wordgame.android.Strings
 import app.wordgame.android.attempt
@@ -70,8 +71,8 @@ class GamesViewModel(private val api: ApiClient, private val solo: List<SoloStor
                 store.summary()?.let {
                     GameSummary(
                         store.gameId, "${store.bot.displayName} (${store.bot.level})", it.myScore, it.botScore, it.myTurn,
-                        if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = Long.MAX_VALUE,
-                        language = store.language, allBots = true,
+                        if (it.finished) GameStatus.FINISHED else GameStatus.ACTIVE, it.won, updatedAt = it.updatedAt,
+                        createdAt = it.startedAt, language = store.language, allBots = true,
                     )
                 }
             }
@@ -180,16 +181,31 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("${if (game.allBots) ROBOT_ICON else FRIEND_ICON} ${game.opponent}", fontWeight = FontWeight.Bold)
-                    val result = when (game.won) {
-                        true -> stringResource(R.string.result_won)
-                        false -> stringResource(R.string.result_lost)
-                        null -> if (game.status == GameStatus.FINISHED) stringResource(R.string.result_draw) else null
-                    }
-                    result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    val line = if (game.status == GameStatus.FINISHED) {
+                        val result = when (game.won) {
+                            true -> stringResource(R.string.result_won)
+                            false -> stringResource(R.string.result_lost)
+                            null -> stringResource(R.string.result_draw)
+                        }
+                        "$result · ${date(game.updatedAt)}"
+                    } else if (game.createdAt > 0) startedAgo(game.createdAt) else null
+                    line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 Text("${game.myScore} – ${game.opponentScore}", style = MaterialTheme.typography.titleMedium)
                 Text(GameLanguage.of(game.language).flag, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
             }
         }
+    }
+}
+
+/** "Commencée il y a 3 jours": minutes, then hours, then days. */
+@Composable
+private fun startedAgo(millis: Long): String {
+    val minutes = ((System.currentTimeMillis() - millis) / 60_000).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> stringResource(R.string.started_now)
+        minutes < 60 -> stringResource(R.string.started_minutes, minutes.toInt())
+        minutes < 24 * 60 -> stringResource(R.string.started_hours, (minutes / 60).toInt())
+        else -> (minutes / (24 * 60)).toInt().let { pluralStringResource(R.plurals.started_days, it, it) }
     }
 }

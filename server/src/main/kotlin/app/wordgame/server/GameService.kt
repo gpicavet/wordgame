@@ -243,6 +243,7 @@ class GameService(
         ids.map { id ->
             val game = load(id)
             val seat = game.seatOf(user)
+            val (createdAt, updatedAt) = query("SELECT created_at, updated_at FROM games WHERE id = ?", id) { it.getLong(1) to it.getLong(2) }.single()
             GameSummary(
                 id = id,
                 opponent = game.opponents(seat, user.lang),
@@ -251,7 +252,8 @@ class GameService(
                 myTurn = game.state.status == GameStatus.ACTIVE && game.state.currentPlayer == seat,
                 status = game.state.status,
                 won = game.state.winner?.let { it == seat },
-                updatedAt = query("SELECT updated_at FROM games WHERE id = ?", id) { it.getLong(1) }.single(),
+                updatedAt = updatedAt,
+                createdAt = createdAt,
                 language = game.state.language,
                 allBots = game.seats.indices.all { it == seat || game.seats[it].bot != null },
             )

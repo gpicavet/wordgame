@@ -118,6 +118,8 @@ data class GameSummary(
     val status: GameStatus,
     val won: Boolean?,
     val updatedAt: Long,
+    /** Epoch millis when the game was created (0 from an older server). */
+    val createdAt: Long = 0,
     /** Language of the words: "fr" or "en". */
     val language: String = "fr",
     /** Every other player is a robot. */

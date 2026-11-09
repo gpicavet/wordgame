@@ -99,6 +99,13 @@
     <string name="result_won">Won</string>
     <string name="result_lost">Lost</string>
     <string name="result_draw">Draw</string>
+    <string name="started_now">Started just now</string>
+    <string name="started_minutes">Started %1$d min ago</string>
+    <string name="started_hours">Started %1$d h ago</string>
+    <plurals name="started_days">
+        <item quantity="one">Started %1$d day ago</item>
+        <item quantity="other">Started %1$d days ago</item>
+    </plurals>
     <string name="seat_friend">Friend</string>
     <string name="seat_random">Random</string>
     <string name="seat_robot">Robot</string>
