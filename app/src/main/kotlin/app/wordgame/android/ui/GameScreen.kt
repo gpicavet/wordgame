@@ -464,8 +464,11 @@ private fun BoardView(
     onDrop: (DragSource, Offset) -> Unit,
 ) {
     val board = Board.fromRows(game.board)
-    // The moves the other players made since the player's own last move.
-    val lastMove = lastRound(game).filter { it.seat != game.mySeat }.flatMap { it.tiles }.map { it.row to it.col }.toSet()
+    // The last round: the other players' moves since the player's own last move, and that move (robots answer at
+    // once, so it is often followed by theirs), each in its own color.
+    val round = lastRound(game)
+    val lastMove = round.filter { it.seat != game.mySeat }.flatMap { it.tiles }.map { it.row to it.col }.toSet()
+    val myMove = round.filter { it.seat == game.mySeat }.flatMap { it.tiles }.map { it.row to it.col }.toSet()
     Column(Modifier.fillMaxWidth().aspectRatio(1f).dropTargetBounds { drag.boardBounds = it }) {
         for (r in 0 until board.size) {
             Row(Modifier.weight(1f)) {
@@ -485,7 +488,11 @@ private fun BoardView(
                         },
                         background = when {
                             tentative != null -> BoardColors.tentativeTile
-                            cell != Board.EMPTY -> if ((r to c) in lastMove) BoardColors.lastMoveTile else BoardColors.tile
+                            cell != Board.EMPTY -> when (r to c) {
+                                in lastMove -> BoardColors.lastMoveTile
+                                in myMove -> BoardColors.myMoveTile
+                                else -> BoardColors.tile
+                            }
                             isCenter && premium == Premium.NONE -> BoardColors.center
                             else -> BoardColors.premium(premium)
                         },

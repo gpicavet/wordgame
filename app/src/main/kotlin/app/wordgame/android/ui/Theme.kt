@@ -22,6 +22,8 @@ object BoardColors {
     val tileText = Color.White
     val tentativeTile = Color(0xFF2A9D8F)
     val lastMoveTile = Color(0xFF4A6580)
+    /** The player's own last move: a dark teal, the color of the tiles being placed, once played. */
+    val myMoveTile = Color(0xFF1F6F66)
     val center = Color(0xFFCBD5DC)
     /** Scores in the players' header: a warm color that stands out from the teal of the interface. */
     val score = Color(0xFFC2410C)
