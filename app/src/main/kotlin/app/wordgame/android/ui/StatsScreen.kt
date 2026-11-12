@@ -185,6 +185,10 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
                         stats.longestWord?.let { stringResource(R.string.stats_longest_word_value, it, it.length) },
                     )
                     RecordLine(
+                        stringResource(R.string.stats_think),
+                        stats.averageThinkMs?.let { stringResource(R.string.stats_think_value, duration(it)) },
+                    )
+                    RecordLine(
                         stringResource(R.string.stats_average_margin),
                         stats.averageMargin?.let { stringResource(R.string.stats_average_margin_value, "%+.0f".format(it)) },
                     )
@@ -216,7 +220,10 @@ private fun StatsContent(stats: PlayerStats, modifier: Modifier) {
             items(stats.history.reversed(), key = { it.gameId }) { g ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(date(g.finishedAt), Modifier.weight(0.25f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (g.hints > 0) "${g.opponent} 💡${g.hints}" else g.opponent, Modifier.weight(0.35f))
+                    Column(Modifier.weight(0.35f)) {
+                        Text(if (g.hints > 0) "${g.opponent} 💡${g.hints}" else g.opponent)
+                        g.thinkMs?.let { Text("⏱ ${duration(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
                     Text("${g.myScore} – ${g.opponentScore}", Modifier.weight(0.25f))
                     Text(resultLabel(g.result), Modifier.weight(0.15f), fontWeight = FontWeight.Bold)
                 }
@@ -342,6 +349,7 @@ private fun ScoreChart(history: List<FinishedGame>, byShare: Boolean) {
             Text(
                 stringResource(R.string.stats_selected, date(g.finishedAt), g.opponent, g.myScore, g.opponentScore, result) +
                     (if (byShare) stringResource(R.string.stats_selected_share, percent(g.share!!)) else "") +
+                    (g.thinkMs?.let { stringResource(R.string.stats_selected_think, duration(it)) } ?: "") +
                     stringResource(R.string.stats_selected_average, average),
                 style = MaterialTheme.typography.bodyMedium,
             )

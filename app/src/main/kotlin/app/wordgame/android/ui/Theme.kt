@@ -24,6 +24,8 @@ object BoardColors {
     val lastMoveTile = Color(0xFF4A6580)
     /** The player's own last move: a dark teal, the color of the tiles being placed, once played. */
     val myMoveTile = Color(0xFF1F6F66)
+    /** Border of the leading player in the game's header. */
+    val leader = Color(0xFFD4A017)
     val center = Color(0xFFCBD5DC)
     /** Scores in the players' header: a warm color that stands out from the teal of the interface. */
     val score = Color(0xFFC2410C)

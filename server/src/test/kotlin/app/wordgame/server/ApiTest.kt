@@ -445,6 +445,37 @@ class ApiTest {
         }
     }
 
+    @Test
+    fun thinkingTimeRunsFromTheFirstLookAtTheTurn() {
+        var clock = 1_000L
+        val dbFile = File.createTempFile("wordgame", ".db").apply { deleteOnExit() }
+        testApplication {
+            val service = GameService(Database(dbFile.path), dictionaries, now = { clock })
+            application { wordgame(service) }
+            val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
+            val alice = client.register("alice")
+            val bob = client.register("bob")
+            // Alice's own game, created at 1 000: seen at once if she starts.
+            val game = client.create(alice.token, CreateGameRequest("bob")).body<GameView>()
+            val first = if (game.currentSeat == game.mySeat) alice else bob
+            clock = 10_000
+            client.view(first.token, game.id)
+            clock = 12_000
+            client.view(first.token, game.id) // a second look changes nothing
+            clock = 25_000
+            client.play(first.token, client.view(first.token, game.id), Action.Pass)
+            val expected = if (first == alice) 24_000L else 15_000L
+            assertEquals(expected, client.view(alice.token, game.id).moves.single().thinkMs)
+
+            // Not looked at: from the previous move.
+            val second = if (first == alice) bob else alice
+            clock = 40_000
+            client.play(second.token, client.view(second.token, game.id), Action.Pass)
+            val stats: PlayerStats = client.get("/api/v1/me/stats") { bearerAuth(first.token) }.body()
+            assertEquals(expected, stats.averageThinkMs)
+        }
+    }
+
     private suspend fun HttpClient.create(token: String, request: CreateGameRequest) =
         post("/api/v1/games") {
             bearerAuth(token)

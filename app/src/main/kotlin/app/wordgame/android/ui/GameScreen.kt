@@ -347,6 +347,15 @@ fun GameScreen(container: AppContainer, gameId: String, onBack: () -> Unit) {
  */
 @Composable
 private fun PlayersHeader(game: GameView, onPlayer: (Int) -> Unit) {
+    // The leader: the winner once the game is over, else the single best score (nobody on a tie or at 0).
+    val leader = if (game.status == GameStatus.FINISHED) game.winnerSeat else {
+        val best = game.players.filter { !it.eliminated }.maxOfOrNull { it.score } ?: 0
+        game.players.indices.filter { !game.players[it].eliminated && game.players[it].score == best }.singleOrNull()?.takeIf { best > 0 }
+    }
+    // Each human's total thinking time, over the moves whose time is known.
+    val thinking = game.players.indices.map { seat ->
+        game.moves.filter { it.seat == seat }.mapNotNull { it.thinkMs }.takeIf { it.isNotEmpty() }?.sum()
+    }
     Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         game.players.forEachIndexed { seat, player ->
             val current = game.status == GameStatus.ACTIVE && seat == game.currentSeat
@@ -358,19 +367,26 @@ private fun PlayersHeader(game: GameView, onPlayer: (Int) -> Unit) {
                 )) { append(player.nickname) }
                 append(" ")
                 withStyle(SpanStyle(color = BoardColors.score, fontWeight = FontWeight.Bold)) { append(player.score.toString()) }
+                if (seat == leader) append(" 👑")
             }
-            Box(
+            val shape = RoundedCornerShape(8.dp)
+            Column(
                 Modifier.weight(1f).height(40.dp)
                     .clickable { onPlayer(seat) }
-                    .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(8.dp))
+                    .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape)
+                    .then(if (seat == leader) Modifier.border(2.dp, BoardColors.leader, shape) else Modifier)
                     .padding(horizontal = 6.dp),
-                contentAlignment = Alignment.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 BasicText(
                     text,
                     maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 20.sp, stepSize = 0.5.sp),
+                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = if (thinking[seat] != null) 16.sp else 20.sp, stepSize = 0.5.sp),
                 )
+                thinking[seat]?.let {
+                    Text("⏱ ${duration(it)}", fontSize = 10.sp, lineHeight = 11.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

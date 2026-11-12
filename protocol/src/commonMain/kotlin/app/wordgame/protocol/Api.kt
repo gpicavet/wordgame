@@ -85,6 +85,8 @@ data class MoveView(
     val end: GameEnd? = null,
     /** Rack before the move: only for the player's own moves, and for everybody once the game is over. */
     val rack: String? = null,
+    /** How long the player thought: from their first look at the game on their turn to the move; null when unknown (robots, timeouts, older moves). */
+    val thinkMs: Long? = null,
 )
 
 /** What one player is allowed to see: their own rack only, and the bag size. */
@@ -145,6 +147,8 @@ data class FinishedGame(
     val hints: Int = 0,
     /** Share (0 to 1) of the points the player could have scored on their turns; null when unknown. */
     val share: Double? = null,
+    /** The player's total thinking time over the game; null when unknown. */
+    val thinkMs: Long? = null,
 )
 
 @Serializable
@@ -176,6 +180,8 @@ data class PlayerStats(
     val hintTurns: Int = 0,
     /** Share (0 to 1) of the possible points scored over the finished games; null when unknown. */
     val share: Double? = null,
+    /** Average thinking time of the player's turns (plays, passes, exchanges) whose time is known; null when none. */
+    val averageThinkMs: Long? = null,
 )
 
 /** Why a player is reported. */

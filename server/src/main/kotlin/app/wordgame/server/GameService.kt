@@ -268,6 +268,7 @@ class GameService(
         val ids = query("SELECT game_id FROM game_players WHERE user_id = ?", user.id) { it.getString(1) }
         val finished = ArrayList<FinishedGame>()
         val myMoves = ArrayList<Pair<MoveRecord, Pair<String, Long>>>() // move, (opponent, playedAt)
+        val thinkTimes = ArrayList<Long>() // of the player's turns, when known
         var scored = 0 // points scored on the turns whose best score is known, and that best
         var possible = 0
         var active = 0
@@ -280,10 +281,15 @@ class GameService(
             val state = game.state
             var gameScored = 0
             var gamePossible = 0
-            query("SELECT record, played_at, best_score FROM moves WHERE game_id = ?", id) {
-                Triple(ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)), it.getLong(2), (it.getObject(3) as? Number)?.toInt() ?: -1)
-            }.filter { it.first.seat == seat }.forEach { (record, at, best) ->
+            var gameThink: Long? = null
+            query("SELECT record, played_at, best_score, think_ms FROM moves WHERE game_id = ?", id) {
+                MoveRow(ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(1)), it.getLong(2), (it.getObject(3) as? Number)?.toInt() ?: -1, (it.getObject(4) as? Number)?.toLong())
+            }.filter { it.record.seat == seat }.forEach { (record, at, best, think) ->
                 myMoves += record to (opponent to at)
+                if (think != null) {
+                    gameThink = (gameThink ?: 0) + think
+                    if (record.type in TURNS) thinkTimes += think
+                }
                 if (best >= 0) {
                     gameScored += record.score
                     gamePossible += best
@@ -311,6 +317,7 @@ class GameService(
                 finishedAt = finishedAt,
                 hints = hints,
                 share = share(gameScored, gamePossible),
+                thinkMs = gameThink,
             )
         }
         finished.sortBy { it.finishedAt }
@@ -341,8 +348,11 @@ class GameService(
             }.sortedByDescending { it.wins + it.losses + it.draws },
             hintTurns = hintTurns,
             share = share(scored, possible),
+            averageThinkMs = thinkTimes.takeIf { it.isNotEmpty() }?.average()?.toLong(),
         )
     }
+
+    private data class MoveRow(val record: MoveRecord, val playedAt: Long, val best: Int, val thinkMs: Long?)
 
     /** Share of the possible points actually scored, at most 1 (a turn can't beat the best move). */
     private fun share(scored: Int, possible: Int) = if (possible > 0) minOf(1.0, scored.toDouble() / possible) else null
@@ -534,7 +544,13 @@ class GameService(
                 HttpStatusCode.UnprocessableEntity, outcome.error.name, outcome.error.name, outcome.unknownWords,
             )
             is MoveOutcome.Applied -> {
-                save(game.id, outcome.state, outcome.record, bestScore(game.state.rules, game.state.boardModel(), outcome.record))
+                // From the player's first look at the game on this turn, else from the turn's start.
+                val since = query(
+                    "SELECT COALESCE(g.turn_seen_at, (SELECT MAX(played_at) FROM moves m WHERE m.game_id = g.id), g.created_at) FROM games g WHERE g.id = ?",
+                    gameId,
+                ) { it.getLong(1) }.single()
+                val think = (now() - since).coerceAtLeast(0)
+                save(game.id, outcome.state, outcome.record, bestScore(game.state.rules, game.state.boardModel(), outcome.record), think)
                 afterMove(game, outcome.state, outcome.record) + playBots(load(gameId))
             }
         }
@@ -696,16 +712,16 @@ class GameService(
         return gameIds.size
     }
 
-    private fun Connection.save(id: String, state: GameState, record: MoveRecord, bestScore: Int = -1) {
+    private fun Connection.save(id: String, state: GameState, record: MoveRecord, bestScore: Int = -1, thinkMs: Long? = null) {
         val t = now()
         update(
-            "UPDATE games SET state = ?, status = ?, move_number = ?, deadline = ?, updated_at = ? WHERE id = ?",
+            "UPDATE games SET state = ?, status = ?, move_number = ?, deadline = ?, updated_at = ?, turn_seen_at = NULL WHERE id = ?",
             ApiJson.encodeToString(GameState.serializer(), state), state.status.name, state.moveNumber,
             t + turnTimeout.inWholeMilliseconds, t, id,
         )
         update(
-            "INSERT INTO moves(game_id, move_number, record, played_at, best_score) VALUES (?, ?, ?, ?, ?)",
-            id, state.moveNumber, ApiJson.encodeToString(MoveRecord.serializer(), record), t, bestScore,
+            "INSERT INTO moves(game_id, move_number, record, played_at, best_score, think_ms) VALUES (?, ?, ?, ?, ?, ?)",
+            id, state.moveNumber, ApiJson.encodeToString(MoveRecord.serializer(), record), t, bestScore, thinkMs,
         )
     }
 
@@ -736,11 +752,15 @@ class GameService(
     private fun Connection.view(game: StoredGame, user: User): GameView {
         val seat = game.seatOf(user)
         val state = game.state
-        val moves = query("SELECT move_number, record, played_at FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
+        // The player sees the game on their turn: their thinking time starts now (only the first look counts).
+        if (state.status == GameStatus.ACTIVE && state.currentPlayer == seat) {
+            update("UPDATE games SET turn_seen_at = ? WHERE id = ? AND turn_seen_at IS NULL", now(), game.id)
+        }
+        val moves = query("SELECT move_number, record, played_at, think_ms FROM moves WHERE game_id = ? ORDER BY move_number", game.id) {
             val r = ApiJson.decodeFromString(MoveRecord.serializer(), it.getString(2))
             // The opponent's racks stay secret while the game is on.
             val rack = r.rack?.takeIf { r.seat == seat || state.status == GameStatus.FINISHED }
-            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3), r.endAdjustments, r.end, rack)
+            MoveView(it.getInt(1), r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, it.getLong(3), r.endAdjustments, r.end, rack, (it.getObject(4) as? Number)?.toLong())
         }
         return GameView(
             id = game.id,

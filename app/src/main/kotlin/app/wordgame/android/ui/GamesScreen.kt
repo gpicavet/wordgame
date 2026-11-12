@@ -28,7 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -191,7 +194,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
                     } else if (game.createdAt > 0) startedAgo(game.createdAt) else null
                     line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                Text("${game.myScore} – ${game.opponentScore}", style = MaterialTheme.typography.titleMedium)
+                // My score stands out; a trophy for the games I won.
+                Text(
+                    buildAnnotatedString {
+                        if (game.won == true) append("🏆 ")
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append(game.myScore.toString()) }
+                        append(" – ${game.opponentScore}")
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 Text(GameLanguage.of(game.language).flag, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
             }
         }

@@ -157,6 +157,11 @@ class Database(path: String) : AutoCloseable {
             "ALTER TABLE moves ADD COLUMN best_score INTEGER",
             // Language of the phone's notifications ("fr", "en"), from the Accept-Language of its registration.
             "ALTER TABLE devices ADD COLUMN lang TEXT NOT NULL DEFAULT 'fr'",
+            // When the current player first opened the game on their turn (NULL: not yet); reset by each move.
+            "ALTER TABLE games ADD COLUMN turn_seen_at INTEGER",
+            // Thinking time of a player's move: from that first look (else the turn's start) to the move; NULL
+            // for robots, timeouts and the moves played before it was recorded.
+            "ALTER TABLE moves ADD COLUMN think_ms INTEGER",
         )
     }
 }

@@ -148,4 +148,10 @@
     <string name="premium_triple_letter">LT</string>
     <string name="premium_double_word">MD</string>
     <string name="premium_triple_word">MT</string>
+    <!-- Durations (thinking time): 45 s, 1 min 20, 12 min, 3 h 05, 2 j 4 h. -->
+    <string name="duration_seconds">%1$d s</string>
+    <string name="duration_minutes_seconds">%1$d min %2$02d</string>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="duration_hours">%1$d h %2$02d</string>
+    <string name="duration_days">%1$d j %2$d h</string>
 </resources>

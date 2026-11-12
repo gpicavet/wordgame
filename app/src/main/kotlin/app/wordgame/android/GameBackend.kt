@@ -59,10 +59,11 @@ enum class SoloBot(val gameId: String, val displayName: String, private val leve
 }
 
 @Serializable
-private data class SoloMove(val record: MoveRecord, val playedAt: Long)
+private data class SoloMove(val record: MoveRecord, val playedAt: Long, val thinkMs: Long? = null)
 
+/** [turnSeenAt]: when the player first saw the game on their turn (null: not yet), the start of their thinking time. */
 @Serializable
-private data class SoloGame(val state: GameState, val moves: List<SoloMove>, val startedAt: Long? = null)
+private data class SoloGame(val state: GameState, val moves: List<SoloMove>, val startedAt: Long? = null, val turnSeenAt: Long? = null)
 
 /** Short description for the games list; times in epoch millis. */
 data class SoloSummary(
@@ -128,6 +129,10 @@ class SoloStore(
                 game = withContext(Dispatchers.Default) { botTurn(game) }
                 withContext(Dispatchers.IO) { write(game) }
             }
+            if (game.state.status == GameStatus.ACTIVE && game.state.currentPlayer == 0 && game.turnSeenAt == null) {
+                game = game.copy(turnSeenAt = System.currentTimeMillis())
+                withContext(Dispatchers.IO) { write(game) }
+            }
             view(game)
         }
 
@@ -138,7 +143,10 @@ class SoloStore(
             when (val outcome = Game.apply(current.state, 0, action, lexicon.words, random)) {
                 is MoveOutcome.Rejected -> throw ApiFailure(ApiError(outcome.error.name, outcome.error.name, outcome.unknownWords))
                 is MoveOutcome.Applied -> {
-                    val next = current.copy(state = outcome.state, moves = current.moves + SoloMove(outcome.record, System.currentTimeMillis()))
+                    val now = System.currentTimeMillis()
+                    val since = current.turnSeenAt ?: current.moves.lastOrNull()?.playedAt ?: current.startedAt ?: now
+                    val move = SoloMove(outcome.record, now, (now - since).coerceAtLeast(0))
+                    val next = current.copy(state = outcome.state, moves = current.moves + move, turnSeenAt = null)
                     withContext(Dispatchers.IO) { write(next) }
                     view(next)
                 }
@@ -179,11 +187,12 @@ class SoloStore(
             status = s.status,
             winnerSeat = s.winner,
             deadline = Long.MAX_VALUE,
-            moves = game.moves.mapIndexed { i, (r, at) ->
+            moves = game.moves.mapIndexed { i, (r, at, think) ->
                 MoveView(
                     i + 1, r.seat, r.type, r.score, r.words, r.tiles, r.exchangedCount, at, r.endAdjustments, r.end,
                     // Like online: the bot's racks stay hidden until the end.
                     r.rack?.takeIf { r.seat == 0 || s.status == GameStatus.FINISHED },
+                    think,
                 )
             },
         )
